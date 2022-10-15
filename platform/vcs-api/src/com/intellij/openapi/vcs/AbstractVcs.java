@@ -15,6 +15,7 @@ import com.intellij.openapi.vcs.changes.LocalChangeList;
 import com.intellij.openapi.vcs.checkin.CheckinEnvironment;
 import com.intellij.openapi.vcs.diff.DiffProvider;
 import com.intellij.openapi.vcs.diff.RevisionSelector;
+import com.intellij.openapi.vcs.history.AuthorMappingProvider;
 import com.intellij.openapi.vcs.history.VcsBaseRevisionAdviser;
 import com.intellij.openapi.vcs.history.VcsHistoryProvider;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
@@ -260,6 +261,9 @@ public abstract class AbstractVcs extends StartedActivated {
   public VcsHistoryProvider getVcsBlockHistoryProvider() {
     return null;
   }
+
+  @Nullable
+  public AuthorMappingProvider getAuthorMappingProvider() { return null; }
 
   /**
    * @deprecated dead code

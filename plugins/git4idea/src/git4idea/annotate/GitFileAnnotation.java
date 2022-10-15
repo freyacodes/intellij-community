@@ -1,6 +1,7 @@
 // Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package git4idea.annotate;
 
+import com.intellij.dvcs.repo.Repository;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -29,10 +30,7 @@ import com.intellij.vcs.log.impl.VcsLogApplicationSettings;
 import com.intellij.vcs.log.impl.VcsLogNavigationUtil;
 import com.intellij.vcs.log.util.VcsUserUtil;
 import com.intellij.vcsUtil.VcsUtil;
-import git4idea.GitContentRevision;
-import git4idea.GitFileRevision;
-import git4idea.GitRevisionNumber;
-import git4idea.GitVcs;
+import git4idea.*;
 import git4idea.changes.GitCommittedChangeList;
 import git4idea.changes.GitCommittedChangeListProvider;
 import git4idea.log.GitCommitTooltipLinkHandler;
@@ -57,6 +55,7 @@ public final class GitFileAnnotation extends FileAnnotation {
   @NotNull private final FilePath myFilePath;
   @NotNull private final GitVcs myVcs;
   @Nullable private final VcsRevisionNumber myBaseRevision;
+  @Nullable private final VirtualFile myVcsRoot;
 
   @NotNull private final List<LineInfo> myLines;
   @Nullable private List<VcsFileRevision> myRevisions;
@@ -84,7 +83,12 @@ public final class GitFileAnnotation extends FileAnnotation {
     new GitAnnotationAspect(LineAnnotationAspect.AUTHOR, VcsBundle.message("line.annotation.aspect.author"), true) {
       @Override
       protected String doGetValue(LineInfo lineInfo) {
-        return VcsUserUtil.toExactString(lineInfo.getAuthorUser());
+        VcsUser user = lineInfo.getAuthorUser();
+        if (myVcsRoot == null) return VcsUserUtil.toExactString(user);
+
+        VcsUser mappedUser = myVcs.getAuthorMappingProvider().get(myVcsRoot, user);
+        if (mappedUser != null) return VcsUserUtil.toExactString(mappedUser);
+        return "";
       }
     };
 
@@ -99,6 +103,13 @@ public final class GitFileAnnotation extends FileAnnotation {
     myVcs = GitVcs.getInstance(myProject);
     myBaseRevision = revision;
     myLines = lines;
+    VirtualFile root;
+    try {
+      root = GitUtil.getRootForFile(project, file);
+    } catch (VcsException e) {
+      root = null;
+    }
+    myVcsRoot = root;
   }
 
   @Override
