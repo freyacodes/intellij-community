@@ -1,7 +1,6 @@
 // Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package git4idea.annotate;
 
-import com.intellij.dvcs.repo.Repository;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -9,7 +8,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.annotate.*;
@@ -33,6 +31,7 @@ import com.intellij.vcsUtil.VcsUtil;
 import git4idea.*;
 import git4idea.changes.GitCommittedChangeList;
 import git4idea.changes.GitCommittedChangeListProvider;
+import git4idea.history.GitMailmapAuthorMapper;
 import git4idea.log.GitCommitTooltipLinkHandler;
 import git4idea.repo.GitRepository;
 import git4idea.repo.GitRepositoryManager;
@@ -61,6 +60,7 @@ public final class GitFileAnnotation extends FileAnnotation {
   @Nullable private List<VcsFileRevision> myRevisions;
   @Nullable private Object2IntMap<VcsRevisionNumber> myRevisionMap;
   @NotNull private final Map<VcsRevisionNumber, String> myCommitMessageMap = new HashMap<>();
+  @NotNull private GitMailmapAuthorMapper myMailmap;
 
   private final LineAnnotationAspect DATE_ASPECT =
     new GitAnnotationAspect(LineAnnotationAspect.DATE, VcsBundle.message("line.annotation.aspect.date"), true) {
@@ -83,12 +83,11 @@ public final class GitFileAnnotation extends FileAnnotation {
     new GitAnnotationAspect(LineAnnotationAspect.AUTHOR, VcsBundle.message("line.annotation.aspect.author"), true) {
       @Override
       protected String doGetValue(LineInfo lineInfo) {
-        VcsUser user = lineInfo.getAuthorUser();
-        if (myVcsRoot == null) return VcsUserUtil.toExactString(user);
+        VcsUser commitUser = lineInfo.getAuthorUser();
+        if (myVcsRoot == null || !myMailmap.isReady(myVcsRoot)) return VcsUserUtil.toExactString(commitUser);
 
-        VcsUser mappedUser = myVcs.getAuthorMappingProvider().get(myVcsRoot, user);
-        if (mappedUser != null) return VcsUserUtil.toExactString(mappedUser);
-        return "";
+        VcsUser mappedUser = myMailmap.get(myVcsRoot, commitUser);
+        return VcsUserUtil.toExactString(mappedUser != null ? mappedUser : commitUser);
       }
     };
 
@@ -110,6 +109,7 @@ public final class GitFileAnnotation extends FileAnnotation {
       root = null;
     }
     myVcsRoot = root;
+    myMailmap = myProject.getService(GitMailmapAuthorMapper.class);
   }
 
   @Override

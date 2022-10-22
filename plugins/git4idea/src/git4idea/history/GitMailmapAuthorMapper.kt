@@ -33,33 +33,32 @@ import java.util.concurrent.ConcurrentHashMap
  * @author Freya Arbjerg
  */
 @Service
-class GitAuthorMappingProvider(private val project: Project) : Disposable {
+class GitMailmapAuthorMapper(private val myProject: Project) : Disposable {
 
-  private val rootsAndMappings: ConcurrentHashMap<VirtualFile, Mappings> = ConcurrentHashMap()
+  private val myRootsAndMappings: ConcurrentHashMap<VirtualFile, Mappings> = ConcurrentHashMap()
 
   init {
-    project.messageBus.connect(this).subscribe(VCS_REPOSITORY_MAPPING_UPDATED, RepositoryListener())
-    onRepositoryUpdate(GitRepositoryManager.getInstance(project).repositories)
+    myProject.messageBus.connect(this).subscribe(VCS_REPOSITORY_MAPPING_UPDATED, RepositoryListener())
+    onRepositoryUpdate(GitRepositoryManager.getInstance(myProject).repositories)
     VirtualFileManager.getInstance().addAsyncFileListener(FileListener(), this)
   }
 
-  /** Note: The priorities of mailmap declarations are undefined by Git documentation */
   private data class Mappings(
     // Proper Name <commit@email.xx>
-    val emailToNameMappings: Map<String, String> = emptyMap(),
+    val myEmailToNameMappings: Map<String, String> = emptyMap(),
     // <proper@email.xx> <commit@email.xx>
-    val emailToEmailMappings: Map<String, String> = emptyMap(),
+    val myEmailToEmailMappings: Map<String, String> = emptyMap(),
     // Proper Name <proper@email.xx> <commit@email.xx>
-    val emailToUserMappings: Map<String, VcsUser> = emptyMap(),
+    val myEmailToUserMappings: Map<String, VcsUser> = emptyMap(),
     // Proper Name <proper@email.xx> Commit Name <commit@email.xx>
-    val userToUserMappings: Map<VcsUser, VcsUser> = emptyMap()
+    val myUserToUserMappings: Map<VcsUser, VcsUser> = emptyMap()
   )
 
   /**
    * @return whether this provider is ready to provide mappings
    */
   fun isReady(vcsRoot: VirtualFile): Boolean {
-    return rootsAndMappings.containsKey(vcsRoot)
+    return myRootsAndMappings.containsKey(vcsRoot)
   }
 
   /**
@@ -67,30 +66,30 @@ class GitAuthorMappingProvider(private val project: Project) : Disposable {
    */
   operator fun get(vcsRoot: VirtualFile, user: VcsUser): VcsUser? {
     // Note: Git documentation does not define the precedence of statements
-    val mappings = rootsAndMappings[vcsRoot] ?: return null
-    mappings.userToUserMappings[user.lowercase()]?.let { return it }
-    mappings.emailToUserMappings[user.email]?.let { return it }
-    mappings.emailToNameMappings[user.email]?.let { return VcsUserImpl(it, user.email) }
-    mappings.emailToEmailMappings[user.email]?.let { return VcsUserImpl(user.name, it) }
-    TODO()
+    val mappings = myRootsAndMappings[vcsRoot] ?: return null
+    mappings.myUserToUserMappings[user.lowercase()]?.let { return it }
+    mappings.myEmailToUserMappings[user.email]?.let { return it }
+    mappings.myEmailToNameMappings[user.email]?.let { return VcsUserImpl(it, user.email) }
+    mappings.myEmailToEmailMappings[user.email]?.let { return VcsUserImpl(user.name, it) }
+    return null
   }
 
   private fun onRepositoryUpdate(repositories: List<GitRepository>) {
     val roots = repositories.map { it.root }
 
     // Clean up removed repositories
-    rootsAndMappings.keys.toMutableList()
+    myRootsAndMappings.keys.toMutableList()
       .apply { removeAll(roots) }
-      .forEach { rootsAndMappings.remove(it) }
+      .forEach { myRootsAndMappings.remove(it) }
 
-    roots.filterNot { rootsAndMappings.containsKey(it) }
+    roots.filterNot { myRootsAndMappings.containsKey(it) }
       .forEach { checkRootAsync(it) }
   }
 
   private fun checkRootAsync(root: VirtualFile) {
     ReadAction.nonBlocking<Mappings> { parseMailmap(root.findChild(MAILMAP_FILE_NAME)) }
       .submit(AppExecutorUtil.getAppExecutorService())
-      .then { rootsAndMappings[root] = it }
+      .then { myRootsAndMappings[root] = it }
   }
 
   private fun parseMailmap(file: VirtualFile?): Mappings {
@@ -176,12 +175,12 @@ class GitAuthorMappingProvider(private val project: Project) : Disposable {
 
   private inner class RepositoryListener : VcsRepositoryMappingListener {
     override fun mappingChanged() {
-      onRepositoryUpdate(VcsRepositoryManager.getInstance(project).repositories.filterIsInstance(GitRepository::class.java))
+      onRepositoryUpdate(VcsRepositoryManager.getInstance(myProject).repositories.filterIsInstance(GitRepository::class.java))
     }
   }
 
   private inner class FileListener : AsyncFileListener {
-    private fun getAffectedRoot(path: String) = rootsAndMappings.keys.find { "${it.path}/$MAILMAP_FILE_NAME" == path }
+    private fun getAffectedRoot(path: String) = myRootsAndMappings.keys.find { "${it.path}/$MAILMAP_FILE_NAME" == path }
 
     override fun prepareChange(events: List<VFileEvent>): ChangeApplier? {
       val affectedRoots = mutableListOf<VirtualFile>()
