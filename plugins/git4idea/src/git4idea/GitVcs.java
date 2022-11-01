@@ -37,10 +37,10 @@ import git4idea.checkin.GitCommitAndPushExecutor;
 import git4idea.checkout.GitCheckoutProvider;
 import git4idea.config.*;
 import git4idea.diff.GitDiffProvider;
-import git4idea.history.GitAuthorMappingProvider;
 import git4idea.history.GitHistoryProvider;
 import git4idea.i18n.GitBundle;
 import git4idea.index.GitStageManagerKt;
+import git4idea.log.GitMailmapUserMapper;
 import git4idea.merge.GitMergeProvider;
 import git4idea.repo.GitRepository;
 import git4idea.repo.GitRepositoryManager;
@@ -143,8 +143,8 @@ public final class GitVcs extends AbstractVcs {
 
   @Override
   @NotNull
-  public GitAuthorMappingProvider getAuthorMappingProvider() {
-    return myProject.getService(GitAuthorMappingProvider.class);
+  public GitMailmapUserMapper getAuthorMappingProvider() {
+    return myProject.getService(GitMailmapUserMapper.class);
   }
 
   @Override

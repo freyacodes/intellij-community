@@ -300,5 +300,11 @@
     </group>
   </actions>
 
+  <applicationListeners>
+    <listener
+      class="com.intellij.vcs.log.data.index.VcsLogUserMappingsListener"
+      topic="VcsUserMappingsListener"/>
+  </applicationListeners>
+
 </idea-plugin>
 
