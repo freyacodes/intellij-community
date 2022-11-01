@@ -185,6 +185,9 @@ public final class GitAnnotationProvider implements AnnotationProviderEx, Cachea
     h.setStdoutSuppressed(true);
     h.addParameters("--porcelain", "-l", "-t");
     h.addParameters("--encoding=UTF-8");
+    h.addCustomEnvironmentVariable("GIT_CONFIG_COUNT", "1");
+    h.addCustomEnvironmentVariable("GIT_CONFIG_KEY_0", "mailmap.file");
+    h.addCustomEnvironmentVariable("GIT_CONFIG_VALUE_0", "false");
 
     GitVcsApplicationSettings settings = GitVcsApplicationSettings.getInstance();
     if (settings.isIgnoreWhitespaces()) {

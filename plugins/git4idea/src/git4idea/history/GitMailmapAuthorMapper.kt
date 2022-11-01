@@ -7,6 +7,7 @@ import com.intellij.dvcs.repo.VcsRepositoryMappingListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.AsyncFileListener
 import com.intellij.openapi.vfs.AsyncFileListener.ChangeApplier
@@ -35,9 +36,11 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class GitMailmapAuthorMapper(private val myProject: Project) : Disposable {
 
+  private val LOG = Logger.getInstance(javaClass)
   private val myRootsAndMappings: ConcurrentHashMap<VirtualFile, Mappings> = ConcurrentHashMap()
 
   init {
+    LOG.info("Initialising mailmap")
     myProject.messageBus.connect(this).subscribe(VCS_REPOSITORY_MAPPING_UPDATED, RepositoryListener())
     onRepositoryUpdate(GitRepositoryManager.getInstance(myProject).repositories)
     VirtualFileManager.getInstance().addAsyncFileListener(FileListener(), this)
@@ -65,6 +68,8 @@ class GitMailmapAuthorMapper(private val myProject: Project) : Disposable {
    * @return the overriding name and email, or null if no match is found
    */
   operator fun get(vcsRoot: VirtualFile, user: VcsUser): VcsUser? {
+    LOG.info("Mapping $user")
+    return VcsUserImpl("get()", "noreply@example.org")
     // Note: Git documentation does not define the precedence of statements
     val mappings = myRootsAndMappings[vcsRoot] ?: return null
     mappings.myUserToUserMappings[user.lowercase()]?.let { return it }
@@ -93,6 +98,7 @@ class GitMailmapAuthorMapper(private val myProject: Project) : Disposable {
   }
 
   private fun parseMailmap(file: VirtualFile?): Mappings {
+    LOG.info("Parsing $file")
     file ?: return EMPTY_MAPPINGS
     if (!file.isValid) return EMPTY_MAPPINGS
 
@@ -183,6 +189,7 @@ class GitMailmapAuthorMapper(private val myProject: Project) : Disposable {
     private fun getAffectedRoot(path: String) = myRootsAndMappings.keys.find { "${it.path}/$MAILMAP_FILE_NAME" == path }
 
     override fun prepareChange(events: List<VFileEvent>): ChangeApplier? {
+      LOG.info(events.toString())
       val affectedRoots = mutableListOf<VirtualFile>()
 
       events.forEach { event ->
@@ -195,6 +202,7 @@ class GitMailmapAuthorMapper(private val myProject: Project) : Disposable {
           affectedRoot = getAffectedRoot(event.newParent.path + "/" + event.newChildName)
         }
         affectedRoots.addIfNotNull(affectedRoot)
+        LOG.info("Scheduling re-parsing of mailmap in $affectedRoot")
       }
 
       if (affectedRoots.isEmpty()) return null

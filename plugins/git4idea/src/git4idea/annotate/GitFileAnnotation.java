@@ -55,12 +55,12 @@ public final class GitFileAnnotation extends FileAnnotation {
   @NotNull private final GitVcs myVcs;
   @Nullable private final VcsRevisionNumber myBaseRevision;
   @Nullable private final VirtualFile myVcsRoot;
+  @NotNull private GitMailmapAuthorMapper myMailmap;
 
   @NotNull private final List<LineInfo> myLines;
   @Nullable private List<VcsFileRevision> myRevisions;
   @Nullable private Object2IntMap<VcsRevisionNumber> myRevisionMap;
   @NotNull private final Map<VcsRevisionNumber, String> myCommitMessageMap = new HashMap<>();
-  @NotNull private GitMailmapAuthorMapper myMailmap;
 
   private final LineAnnotationAspect DATE_ASPECT =
     new GitAnnotationAspect(LineAnnotationAspect.DATE, VcsBundle.message("line.annotation.aspect.date"), true) {
