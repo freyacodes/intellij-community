@@ -13,9 +13,7 @@ import com.intellij.ide.nls.NlsMessages;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationListener;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.compiler.*;
 import com.intellij.openapi.deployment.DeploymentUtil;
 import com.intellij.openapi.diagnostic.Logger;
@@ -58,10 +56,7 @@ import org.jetbrains.jps.model.java.JavaSourceRootType;
 
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
-import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -239,8 +234,8 @@ public final class CompileDriver {
   @Nullable
   private TaskFuture<?> compileInExternalProcess(@NotNull final CompileContextImpl compileContext, final boolean onlyCheckUpToDate) {
     final CompileScope scope = compileContext.getCompileScope();
-    final Collection<String> paths = CompileScopeUtil.fetchFiles(compileContext);
-    List<TargetTypeBuildScope> scopes = getBuildScopes(compileContext, scope, paths);
+    final Collection<String> paths = ReadAction.compute(() -> CompileScopeUtil.fetchFiles(compileContext));
+    List<TargetTypeBuildScope> scopes = ReadAction.compute(() -> getBuildScopes(compileContext, scope, paths));
 
     // need to pass scope's user data to server
     final Map<String, String> builderParams;
@@ -267,10 +262,20 @@ public final class CompileDriver {
 
     final Map<String, List<Artifact>> outputToArtifact = ArtifactCompilerUtil.containsArtifacts(scopes) ? ArtifactCompilerUtil.createOutputToArtifactMap(myProject) : null;
     return BuildManager.getInstance().scheduleBuild(myProject, compileContext.isRebuild(), compileContext.isMake(), onlyCheckUpToDate, scopes, paths, builderParams, new DefaultMessageHandler(myProject) {
-        @Override
+      @Override
+      public void buildStarted(@NotNull UUID sessionId) {
+        if (!onlyCheckUpToDate && compileContext.shouldUpdateProblemsView()) {
+          ProblemsView view = ProblemsView.getInstanceIfCreated(myProject);
+          if (view != null) {
+            view.buildStarted(sessionId);
+          }
+        }
+      }
+
+      @Override
         public void sessionTerminated(@NotNull UUID sessionId) {
           if (!onlyCheckUpToDate && compileContext.shouldUpdateProblemsView()) {
-            ProblemsView view = myProject.getServiceIfCreated(ProblemsView.class);
+            ProblemsView view = ProblemsView.getInstanceIfCreated(myProject);
             if (view != null) {
               view.clearProgress();
               view.clearOldMessages(compileContext.getCompileScope(), compileContext.getSessionId());
@@ -428,16 +433,9 @@ public final class CompileDriver {
     PsiDocumentManager.getInstance(myProject).commitAllDocuments();
     FileDocumentManager.getInstance().saveAllDocuments();
 
-    // ensure the project model seen by build process is up-to-date
-    StoreUtil.saveSettings(myProject);
-    if (!isUnitTestMode) {
-      StoreUtil.saveSettings(ApplicationManager.getApplication());
-    }
-
     final CompileContextImpl compileContext = new CompileContextImpl(myProject, compileTask, scope, !isRebuild && !forceCompile, isRebuild);
     span.complete();
     final Runnable compileWork = () -> {
-      Tracer.Span compileWorkSpan = Tracer.start("compileWork");
       final ProgressIndicator indicator = compileContext.getProgressIndicator();
       if (indicator.isCanceled() || myProject.isDisposed()) {
         if (callback != null) {
@@ -445,6 +443,14 @@ public final class CompileDriver {
         }
         return;
       }
+
+      // ensure the project model seen by build process is up-to-date
+      StoreUtil.saveSettings(myProject);
+      if (!isUnitTestMode) {
+        StoreUtil.saveSettings(ApplicationManager.getApplication());
+      }
+
+      Tracer.Span compileWorkSpan = Tracer.start("compileWork");
       CompilerCacheManager compilerCacheManager = CompilerCacheManager.getInstance(myProject);
       final BuildManager buildManager = BuildManager.getInstance();
       try {
@@ -508,22 +514,6 @@ public final class CompileDriver {
           duration
         );
 
-        if (ApplicationManagerEx.isInIntegrationTest()) {
-          String logPath = PathManager.getLogPath();
-          Path perfMetrics = Paths.get(logPath).resolve("performance-metrics").resolve("buildMetrics.json");
-          try {
-            FileUtil.writeToFile(perfMetrics.toFile(), "{\n\t\"build_errors\" : " +
-                                                       compileContext.getMessageCount(CompilerMessageCategory.ERROR) + "," +
-                                                       "\n\t\"build_warnings\" : " +
-                                                       compileContext.getMessageCount(CompilerMessageCategory.WARNING) + "," +
-                                                       "\n\t\"build_compilation_duration\" : " +
-                                                       duration +
-                                                       "\n}");
-          }
-          catch (IOException ex) {
-            LOG.info("Could not create json file with the build performance metrics.");
-          }
-        }
       }
     };
 

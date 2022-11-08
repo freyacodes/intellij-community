@@ -3,5 +3,6 @@ package org.jetbrains.plugins.gitlab.api
 
 object GitLabGQLQueries {
   const val getCurrentUser = "graphql/query/getCurrentUser.graphql"
-  const val getProject = "graphql/query/getProjectMembers.graphql"
+  const val getProjectMembers = "graphql/query/getProjectMembers.graphql"
+  const val getProjectLabels = "graphql/query/getProjectLabels.graphql"
 }

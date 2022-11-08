@@ -5,6 +5,7 @@ import com.intellij.execution.process.CapturingProcessHandler
 import com.intellij.execution.target.TargetProgressIndicator
 import com.intellij.execution.target.TargetedCommandLineBuilder
 import com.intellij.execution.target.local.LocalTargetEnvironmentRequest
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.withBackgroundProgressIndicator
 import com.intellij.openapi.project.Project
@@ -25,7 +26,8 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.annotations.ApiStatus
 
 @ApiStatus.Experimental
-object CondaPackageCache : PythonPackageCache<String> {
+@Service
+class CondaPackageCache : PythonPackageCache<String> {
   private var cache: Map<String, List<String>> = emptyMap()
 
   override val packages: List<String>
@@ -51,7 +53,7 @@ object CondaPackageCache : PythonPackageCache<String> {
 
       val helpersPath = helpers.apply(targetEnv)
 
-      baseConda.addCondaToTargetBuilder(commandLineBuilder)
+      baseConda.addCondaToTargetBuilder(sdk, commandLineBuilder)
 
       commandLineBuilder.addParameter("python")
       commandLineBuilder.addParameter("$helpersPath/conda_packaging_tool.py")

@@ -1,6 +1,10 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea.branch
 
+import com.intellij.codeInsight.completion.CompletionParameters
+import com.intellij.codeInsight.completion.CompletionResultSet
+import com.intellij.openapi.application.invokeLater
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
@@ -10,8 +14,8 @@ import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.layout.*
 import com.intellij.util.textCompletion.DefaultTextCompletionValueDescriptor
+import com.intellij.util.textCompletion.TextCompletionProviderBase
 import com.intellij.util.textCompletion.TextFieldWithCompletion
-import com.intellij.util.textCompletion.ValuesCompletionProvider
 import git4idea.branch.GitBranchOperationType.CHECKOUT
 import git4idea.branch.GitBranchOperationType.CREATE
 import git4idea.i18n.GitBundle
@@ -72,7 +76,11 @@ internal class GitNewBranchDialog @JvmOverloads constructor(private val project:
 
   override fun createCenterPanel() = panel {
     row {
-      cell(TextFieldWithCompletion(project, createBranchNameCompletion(), branchName, true, false, false, false))
+      cell(TextFieldWithCompletion(project, createBranchNameCompletion(), branchName,
+                                   /*oneLineMode*/ true,
+                                   /*autoPopup*/ true,
+                                   /*forceAutoPopup*/ false,
+                                   /*showHint*/ false))
         .bind({ c -> c.text }, { c, v -> c.text = v }, ::branchName.toMutableProperty())
         .align(AlignX.FILL)
         .label(GitBundle.message("new.branch.dialog.branch.name"), LabelPosition.TOP)
@@ -102,11 +110,17 @@ internal class GitNewBranchDialog @JvmOverloads constructor(private val project:
   }
 
   private fun createBranchNameCompletion(): BranchNamesCompletion {
-    val branchNames = mutableSetOf<String>()
-    branchNames += collectLocalBranchNames()
-    branchNames += collectRemoteBranchNames()
-    val directories = collectDirectories(branchNames, true).filter { it !in branchNames }
-    return BranchNamesCompletion(directories + branchNames.toList())
+    val localBranches = collectLocalBranchNames()
+    val remoteBranches = collectRemoteBranchNames()
+    val localDirectories = collectDirectories(localBranches.asIterable(), true)
+    val remoteDirectories = collectDirectories(remoteBranches.asIterable(), true)
+
+    val allSuggestions = mutableSetOf<String>()
+    allSuggestions += localBranches
+    allSuggestions += remoteBranches
+    allSuggestions += localDirectories
+    allSuggestions += remoteDirectories
+    return BranchNamesCompletion(localDirectories.toList(), allSuggestions.toList())
   }
 
   private fun collectLocalBranchNames() = repositories.asSequence().flatMap { it.branches.localBranches }.map { it.name }
@@ -129,7 +143,11 @@ internal class GitNewBranchDialog @JvmOverloads constructor(private val project:
   }
 
   private fun validateBranchName(onApply: Boolean): ValidationInfoBuilder.(TextFieldWithCompletion) -> ValidationInfo? = {
-    it.cleanBranchNameAndAdjustCursorIfNeeded()
+    // Do not change Document inside DocumentListener callback
+    invokeLater {
+      it.cleanBranchNameAndAdjustCursorIfNeeded()
+    }
+
     val branchName = validator.cleanUpBranchName(it.text).trim()
     val errorInfo = (if (onApply) checkRefNameEmptyOrHead(branchName) else null)
                     ?: conflictsWithRemoteBranch(repositories, branchName)
@@ -152,6 +170,8 @@ internal class GitNewBranchDialog @JvmOverloads constructor(private val project:
   }
 
   private fun TextFieldWithCompletion.cleanBranchNameAndAdjustCursorIfNeeded() {
+    if (isDisposed) return
+
     val initialText = text
     val initialCaret = caretModel.offset
 
@@ -169,8 +189,21 @@ internal class GitNewBranchDialog @JvmOverloads constructor(private val project:
     caretModel.moveToOffset(fixedCaret)
   }
 
-  private class BranchNamesCompletion(branches: List<String>) : ValuesCompletionProvider.ValuesCompletionProviderDumbAware<String>(
+  private class BranchNamesCompletion(
+    val localDirectories: List<String>,
+    val allSuggestions: List<String>)
+    : TextCompletionProviderBase<String>(
     DefaultTextCompletionValueDescriptor.StringValueDescriptor(),
-    branches
-  )
+    emptyList(),
+    false
+  ), DumbAware {
+    override fun getValues(parameters: CompletionParameters, prefix: String, result: CompletionResultSet): Collection<String> {
+      if (parameters.isAutoPopup) {
+        return localDirectories
+      }
+      else {
+        return allSuggestions
+      }
+    }
+  }
 }

@@ -3,7 +3,6 @@ package com.intellij.refactoring.rename.ui
 
 import com.intellij.find.FindBundle
 import com.intellij.ide.util.scopeChooser.ScopeChooserCombo
-import com.intellij.model.Pointer
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.DialogWrapper
@@ -14,12 +13,10 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.search.LocalSearchScope
 import com.intellij.psi.search.SearchScope
 import com.intellij.refactoring.RefactoringBundle
-import com.intellij.refactoring.rename.api.RenameTarget
-import com.intellij.refactoring.rename.api.RenameValidationResultData
-import com.intellij.refactoring.rename.api.RenameValidationResultProblemLevel
+import com.intellij.refactoring.rename.api.RenameValidationResult.Companion.RenameValidationResultData
+import com.intellij.refactoring.rename.api.RenameValidationResult.Companion.RenameValidationResultProblemLevel
 import com.intellij.refactoring.rename.api.RenameValidator
 import com.intellij.refactoring.rename.impl.RenameOptions
-import com.intellij.refactoring.rename.impl.RenameValidatorFactory
 import com.intellij.refactoring.rename.impl.TextOptions
 import com.intellij.refactoring.ui.NameSuggestionsField
 import com.intellij.ui.UserActivityWatcher
@@ -28,6 +25,7 @@ import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.gridLayout.Gaps
+import com.intellij.util.asSafely
 import java.awt.event.ActionEvent
 import java.awt.event.ItemEvent
 import javax.swing.AbstractAction
@@ -36,8 +34,8 @@ import javax.swing.JComponent
 
 internal class RenameDialog(
   private val project: Project,
-  target: RenameTarget,
   @Label private val presentableText: String,
+  private val renameValidator: RenameValidator,
   initOptions: Options,
 ) : DialogWrapper(project) {
 
@@ -46,7 +44,6 @@ internal class RenameDialog(
   private var myCommentsStringsOccurrences: Boolean? = initOptions.renameOptions.textOptions.commentStringOccurrences
   private var myTextOccurrences: Boolean? = initOptions.renameOptions.textOptions.textOccurrences
   private var myScope: SearchScope = initOptions.renameOptions.searchScope
-  private val renameValidatorPtr: Pointer<out RenameValidator>? = RenameValidatorFactory.renameValidator(project, target)?.createPointer()
 
   var preview: Boolean = false
     private set
@@ -118,15 +115,13 @@ internal class RenameDialog(
             }
           })
         .validation { field ->
-          renameValidatorPtr
-            ?.dereference()
-            ?.validate(field.enteredName)
-            ?.let { it as RenameValidationResultData }
+          renameValidator
+            .validate(field.enteredName)
+            .asSafely<RenameValidationResultData>()
             ?.let {
               when (it.level) {
                 RenameValidationResultProblemLevel.WARNING -> warning(StringUtil.escapeXmlEntities(it.message(field.enteredName)))
                 RenameValidationResultProblemLevel.ERROR -> error(StringUtil.escapeXmlEntities(it.message(field.enteredName)))
-                else -> null
               }
             }
         }

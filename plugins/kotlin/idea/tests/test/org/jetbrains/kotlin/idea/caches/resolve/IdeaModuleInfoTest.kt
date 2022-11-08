@@ -5,6 +5,8 @@ package org.jetbrains.kotlin.idea.caches.resolve
 import com.intellij.concurrency.ConcurrentCollectionFactory
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.impl.NonBlockingReadActionImpl
+import com.intellij.openapi.application.runReadAction
+import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.StdModuleTypes
 import com.intellij.openapi.projectRoots.ProjectJdkTable
@@ -39,8 +41,6 @@ import org.jetbrains.kotlin.idea.test.KotlinTestUtils.disposeVfsRootAccess
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase.addJdk
 import org.jetbrains.kotlin.idea.test.runAll
 import org.jetbrains.kotlin.idea.util.application.executeOnPooledThread
-import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.konan.target.KonanTarget
 import org.jetbrains.kotlin.platform.TargetPlatform
 import org.jetbrains.kotlin.platform.js.JsPlatforms
@@ -340,6 +340,232 @@ class IdeaModuleInfoTest8 : JavaModuleTestCase() {
 
         a.production.assertDependenciesEqual(a.production, b.production)
         b.production.assertDependenciesEqual(b.production, a.production)
+    }
+
+    fun testModuleCircularDependencyLibraries2() {
+        val s0 = module("s0")
+        val (a, b, c) = modules()
+        val d = module("d")
+
+        val s0Lib = projectLibrary("s0Lib", classesRoot = TestKotlinArtifacts.kotlinDaemon.jarRoot)
+        val s0LibInfo = s0Lib.toLibraryInfo()
+
+        s0.addDependency(a)
+        s0.addDependency(s0Lib)
+
+        val aLib = projectLibrary("aLib", classesRoot = TestKotlinArtifacts.kotlinReflect.jarRoot)
+        val aLibInfo = aLib.toLibraryInfo()
+
+        a.addDependency(b)
+        a.addDependency(d)
+        a.addDependency(aLib)
+
+        val bLib = projectLibrary("bLib", classesRoot = TestKotlinArtifacts.kotlinAnnotationsJvm.jarRoot)
+        val bLibInfo = bLib.toLibraryInfo()
+
+        b.addDependency(c)
+        b.addDependency(bLib)
+
+        val cLib = projectLibrary("cLib", classesRoot = TestKotlinArtifacts.kotlinTestJunit.jarRoot)
+        val cLibInfo = cLib.toLibraryInfo()
+
+        c.addDependency(a)
+        c.addDependency(cLib)
+
+        val dLib = projectLibrary("dLib", classesRoot = TestKotlinArtifacts.parcelizeRuntime.jarRoot)
+        val dLibInfo = dLib.toLibraryInfo()
+
+        d.addDependency(dLib)
+
+        s0.production.assertDependenciesEqual(
+            s0.production,
+            a.production,
+            s0LibInfo,
+        )
+
+        a.production.assertDependenciesEqual(
+            a.production,
+            b.production,
+            d.production,
+            aLibInfo,
+        )
+
+        b.production.assertDependenciesEqual(
+            b.production,
+            c.production,
+            bLibInfo,
+        )
+
+        c.production.assertDependenciesEqual(
+            c.production,
+            a.production,
+            cLibInfo,
+        )
+
+        d.production.assertDependenciesEqual(
+            d.production,
+            dLibInfo,
+        )
+
+        val dependenciesCache = LibraryDependenciesCache.getInstance(project)
+        fun assertDependencies(lib: LibraryInfo, vararg expectedLibraries: LibraryInfo) {
+            val dependencies = dependenciesCache.getLibraryDependencies(lib)
+            assertEquals(
+                expectedLibraries.joinToString(separator = "\n") { it.name.asString() },
+                dependencies.libraries.map { it.name.asString() }.sorted().joinToString(separator = "\n"),
+            )
+        }
+
+        assertDependencies(
+            lib = s0LibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+            s0LibInfo,
+        )
+
+        assertDependencies(
+            lib = aLibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+        )
+
+        assertDependencies(
+            lib = bLibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+        )
+
+        assertDependencies(
+            lib = cLibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+        )
+
+        assertDependencies(
+            lib = dLibInfo,
+            dLibInfo,
+        )
+    }
+
+    fun testModuleCircularDependencyLibraries3() {
+        val s0 = module("s0")
+        val (a, b, c) = modules()
+        val d = module("d")
+
+        val s0Lib = projectLibrary("s0Lib", classesRoot = TestKotlinArtifacts.kotlinDaemon.jarRoot)
+        val s0LibInfo = s0Lib.toLibraryInfo()
+
+        s0.addDependency(a)
+        s0.addDependency(s0Lib)
+
+        val aLib = projectLibrary("aLib", classesRoot = TestKotlinArtifacts.kotlinReflect.jarRoot)
+        val aLibInfo = aLib.toLibraryInfo()
+
+        a.addDependency(d)
+        a.addDependency(b)
+        a.addDependency(aLib)
+
+        val bLib = projectLibrary("bLib", classesRoot = TestKotlinArtifacts.kotlinAnnotationsJvm.jarRoot)
+        val bLibInfo = bLib.toLibraryInfo()
+
+        b.addDependency(c)
+        b.addDependency(bLib)
+
+        val cLib = projectLibrary("cLib", classesRoot = TestKotlinArtifacts.kotlinTestJunit.jarRoot)
+        val cLibInfo = cLib.toLibraryInfo()
+
+        c.addDependency(a)
+        c.addDependency(cLib)
+
+        val dLib = projectLibrary("dLib", classesRoot = TestKotlinArtifacts.parcelizeRuntime.jarRoot)
+        val dLibInfo = dLib.toLibraryInfo()
+
+        d.addDependency(dLib)
+
+        s0.production.assertDependenciesEqual(
+            s0.production,
+            a.production,
+            s0LibInfo,
+        )
+
+        a.production.assertDependenciesEqual(
+            a.production,
+            d.production,
+            b.production,
+            aLibInfo,
+        )
+
+        b.production.assertDependenciesEqual(
+            b.production,
+            c.production,
+            bLibInfo,
+        )
+
+        c.production.assertDependenciesEqual(
+            c.production,
+            a.production,
+            cLibInfo,
+        )
+
+        d.production.assertDependenciesEqual(
+            d.production,
+            dLibInfo,
+        )
+
+        val dependenciesCache = LibraryDependenciesCache.getInstance(project)
+        fun assertDependencies(lib: LibraryInfo, vararg expectedLibraries: LibraryInfo) {
+            val dependencies = dependenciesCache.getLibraryDependencies(lib)
+            assertEquals(
+                expectedLibraries.joinToString(separator = "\n") { it.name.asString() },
+                dependencies.libraries.map { it.name.asString() }.sorted().joinToString(separator = "\n"),
+            )
+        }
+
+        assertDependencies(
+            lib = s0LibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+            s0LibInfo,
+        )
+
+        assertDependencies(
+            lib = aLibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+        )
+
+        assertDependencies(
+            lib = bLibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+        )
+
+        assertDependencies(
+            lib = cLibInfo,
+            aLibInfo,
+            bLibInfo,
+            cLibInfo,
+            dLibInfo,
+        )
+
+        assertDependencies(
+            lib = dLibInfo,
+            dLibInfo,
+        )
     }
 
     fun testExportedDependency() {

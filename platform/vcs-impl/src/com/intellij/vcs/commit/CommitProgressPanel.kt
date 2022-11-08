@@ -22,6 +22,7 @@ import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.util.NlsContexts.ProgressDetails
 import com.intellij.openapi.util.NlsContexts.ProgressText
 import com.intellij.openapi.util.text.HtmlChunk
+import com.intellij.openapi.util.text.plus
 import com.intellij.openapi.vcs.VcsBundle.message
 import com.intellij.openapi.vcs.VcsBundle.messagePointer
 import com.intellij.openapi.vcs.changes.InclusionListener
@@ -45,10 +46,7 @@ import kotlinx.coroutines.flow.onEach
 import java.awt.Component
 import java.awt.Dimension
 import java.awt.Font
-import java.awt.event.ComponentAdapter
-import java.awt.event.ComponentEvent
-import java.awt.event.ContainerEvent
-import java.awt.event.ContainerListener
+import java.awt.event.*
 import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.border.Border
@@ -78,12 +76,7 @@ open class CommitProgressPanel : CommitProgressUi, InclusionListener, DocumentLi
   private val progressFlow = MutableStateFlow<CommitChecksProgressIndicator?>(null)
   private var progress: CommitChecksProgressIndicator? by progressFlow::value
 
-  private val panel = object : NonOpaquePanel(VerticalLayout(4)) {
-    override fun updateUI() {
-      super.updateUI()
-      background = UIUtil.getTextFieldBackground() // Yes, background in NonOpaquePanel. See JBViewport.getBackground.
-    }
-  }
+  private val panel = NonOpaquePanel(VerticalLayout(4))
   private val scrollPane = FixedSizeScrollPanel(panel, JBDimension(400, 150))
 
   private val failuresPanel = FailuresPanel()
@@ -256,19 +249,19 @@ open class CommitProgressPanel : CommitProgressUi, InclusionListener, DocumentLi
     fun install() {
       panel.addContainerListener(this)
 
-      for (component in panel.components) {
-        component.addComponentListener(childListener)
+      for (child in panel.components) {
+        child.addComponentListener(childListener)
       }
       syncVisibility()
     }
 
     override fun componentAdded(e: ContainerEvent) {
-      e.component.addComponentListener(childListener)
+      e.child.addComponentListener(childListener)
       syncVisibility()
     }
 
     override fun componentRemoved(e: ContainerEvent) {
-      e.component.removeComponentListener(childListener)
+      e.child.removeComponentListener(childListener)
       syncVisibility()
     }
 
@@ -288,6 +281,7 @@ sealed class CommitCheckFailure {
   open class WithDescription(val text: @NlsContexts.NotificationContent String) : CommitCheckFailure()
 
   class WithDetails(text: @NlsContexts.NotificationContent String,
+                    val viewDetailsLinkText: @NlsContexts.NotificationContent String?,
                     val viewDetailsActionText: @NlsContexts.NotificationContent String,
                     val viewDetails: () -> Unit) : WithDescription(text)
 }
@@ -360,13 +354,21 @@ private class FailuresDescriptionPanel : HtmlPanel() {
 
     val failureLinks = formatNarrowAndList(failures.mapNotNull {
       when (val failure = it.value) {
-        is CommitCheckFailure.WithDetails -> HtmlChunk.link(it.key.toString(), failure.text)
+        is CommitCheckFailure.WithDetails -> {
+          if (failure.viewDetailsLinkText != null) {
+            HtmlChunk.text(failure.text).plus(HtmlChunk.nbsp())
+              .plus(HtmlChunk.link(it.key.toString(), failure.viewDetailsLinkText))
+          }
+          else {
+            HtmlChunk.link(it.key.toString(), failure.text)
+          }
+        }
         is CommitCheckFailure.WithDescription -> HtmlChunk.text(failure.text)
         else -> null
       }
     })
     if (failureLinks.isBlank()) return HtmlChunk.text(message("label.commit.checks.failed.unknown.reason"))
-    return HtmlChunk.raw(message("label.commit.checks.failed", failureLinks))
+    return HtmlChunk.raw(failureLinks)
   }
 
   private fun showDetails(event: HyperlinkEvent) {
@@ -425,6 +427,10 @@ internal class FixedSizeScrollPanel(view: Component, private val fixedSize: Dime
   init {
     border = empty()
     viewportBorder = empty()
+    isOpaque = false
+    horizontalScrollBar.isOpaque = false
+    verticalScrollBar.isOpaque = false
+    viewport.isOpaque = false
   }
 
   override fun getPreferredSize(): Dimension {

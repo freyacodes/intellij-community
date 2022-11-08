@@ -9,6 +9,7 @@ import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ActionUtil
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.components.service
 import com.intellij.openapi.ide.CopyPasteManager
@@ -17,10 +18,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.*
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.util.WindowStateService
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.ui.*
-import com.intellij.ui.components.panels.FlowLayoutWrapper
 import com.intellij.ui.popup.NextStepHandler
 import com.intellij.ui.popup.PopupFactoryImpl
 import com.intellij.ui.popup.WizardPopup
@@ -32,18 +33,19 @@ import com.intellij.ui.tree.ui.Control
 import com.intellij.ui.tree.ui.DefaultControl
 import com.intellij.ui.tree.ui.DefaultTreeUI
 import com.intellij.ui.treeStructure.Tree
-import com.intellij.util.FontUtil
 import com.intellij.util.text.nullize
 import com.intellij.util.ui.JBDimension
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.tree.TreeUtil
 import git4idea.GitBranch
+import git4idea.actions.branch.GitBranchActionsUtil
 import git4idea.branch.GitBranchType
 import git4idea.i18n.GitBundle
 import git4idea.repo.GitRepository
 import git4idea.repo.GitRepositoryChangeListener
 import git4idea.repo.GitRepositoryManager
+import git4idea.ui.branch.GitBranchesTreePopupStep.Companion.SPEED_SEARCH_DEFAULT_ACTIONS_GROUP
 import git4idea.ui.branch.GitBranchesTreeUtil.overrideBuiltInAction
 import git4idea.ui.branch.GitBranchesTreeUtil.selectFirstLeaf
 import git4idea.ui.branch.GitBranchesTreeUtil.selectLastLeaf
@@ -61,13 +63,13 @@ import java.awt.Point
 import java.awt.datatransfer.DataFlavor
 import java.awt.event.*
 import java.util.function.Function
-import java.util.function.Predicate
 import java.util.function.Supplier
 import javax.swing.*
 import javax.swing.tree.TreeCellRenderer
 import javax.swing.tree.TreeModel
 import javax.swing.tree.TreePath
 import javax.swing.tree.TreeSelectionModel
+import kotlin.math.min
 
 class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, parent: JBPopup? = null)
   : WizardPopup(project, parent, step),
@@ -83,7 +85,8 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
 
   private lateinit var searchPatternStateFlow: MutableStateFlow<String?>
 
-  private var userResized: Boolean
+  internal var userResized: Boolean
+    private set
 
   init {
     setMinimumSize(JBDimension(300, 200))
@@ -99,7 +102,13 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
       warnThatBranchesDivergedIfNeeded()
     }
     installBranchSettingsListener()
-    DataManager.registerDataProvider(component, DataProvider { dataId -> if (POPUP_KEY.`is`(dataId)) this else null })
+    DataManager.registerDataProvider(component, DataProvider { dataId ->
+      when {
+        POPUP_KEY.`is`(dataId) -> this
+        GitBranchActionsUtil.REPOSITORIES_KEY.`is`(dataId) -> treeStep.repositories
+        else -> null
+      }
+    })
   }
 
   private fun warnThatBranchesDivergedIfNeeded() {
@@ -116,7 +125,8 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
       Disposer.register(this) {
         it.model = null
       }
-      it.border = JBUI.Borders.emptyLeft(JBUIScale.scale(10))
+      val topBorder = if (step.title.isNullOrEmpty()) JBUIScale.scale(5) else 0
+      it.border = JBUI.Borders.empty(topBorder, JBUIScale.scale(10), 0, 0)
     }
     searchPatternStateFlow = MutableStateFlow(null)
     speedSearch.installSupplyTo(tree, false)
@@ -172,18 +182,7 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
   }
 
   private fun installResizeListener() {
-    val popupWindow = popupWindow ?: return
-    val windowListener: ComponentListener = object : ComponentAdapter() {
-      override fun componentResized(e: ComponentEvent) {
-        userResized = true
-      }
-    }
-    popupWindow.addComponentListener(windowListener)
-    addListener(object : JBPopupListener {
-      override fun onClosed(event: LightweightWindowEvent) {
-        popupWindow.removeComponentListener(windowListener)
-      }
-    })
+    addResizeListener({ userResized = true }, this)
   }
 
   private fun installBranchSettingsListener() {
@@ -227,6 +226,24 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
     })
   }
 
+  private fun installSpeedSearchActions() {
+    val updateSpeedSearch = {
+      val textInEditor = mySpeedSearchPatternField.textEditor.text
+      speedSearch.updatePattern(textInEditor)
+      applySearchPattern(textInEditor)
+    }
+    val editorActionsContext = mapOf(PlatformCoreDataKeys.CONTEXT_COMPONENT to mySpeedSearchPatternField.textEditor)
+
+    (ActionManager.getInstance()
+      .getAction(SPEED_SEARCH_DEFAULT_ACTIONS_GROUP) as ActionGroup)
+      .getChildren(null)
+      .forEach { action ->
+        registerAction(ActionManager.getInstance().getId(action),
+                       KeymapUtil.getKeyStroke(action.shortcutSet),
+                       createShortcutAction(action, editorActionsContext, updateSpeedSearch, false))
+      }
+  }
+
   private fun installShortcutActions(model: TreeModel) {
     val root = model.root
     (0 until model.getChildCount(root))
@@ -235,7 +252,9 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
       .filterIsInstance<PopupFactoryImpl.ActionItem>()
       .map(PopupFactoryImpl.ActionItem::getAction)
       .forEach { action ->
-        registerAction(ActionManager.getInstance().getId(action), KeymapUtil.getKeyStroke(action.shortcutSet), createShortcutAction(action))
+        registerAction(ActionManager.getInstance().getId(action),
+                       KeymapUtil.getKeyStroke(action.shortcutSet),
+                       createShortcutAction<Any>(action))
       }
   }
 
@@ -254,20 +273,29 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
     }, JBUI.Borders.emptyRight(2))
   }
 
-  private fun createShortcutAction(action: AnAction) = object : AbstractAction() {
+  private fun <T> createShortcutAction(action: AnAction,
+                                       actionContext: Map<DataKey<T>, T> = emptyMap(),
+                                       afterActionPerformed: (() -> Unit)? = null,
+                                       closePopup: Boolean = true) = object : AbstractAction() {
     override fun actionPerformed(e: ActionEvent?) {
-      cancel()
-      ActionUtil.invokeAction(action,
-                              GitBranchesTreePopupStep.createDataContext(project, treeStep.repositories),
-                              GitBranchesTreePopupStep.ACTION_PLACE, null, null)
+      if (closePopup) {
+        cancel()
+      }
+
+      val stepContext = GitBranchesTreePopupStep.createDataContext(project, treeStep.repositories)
+      val resultContext =
+        with(SimpleDataContext.builder().setParent(stepContext)) {
+          actionContext.forEach { (key, value) -> add(key, value) }
+          build()
+        }
+
+      ActionUtil.invokeAction(action, resultContext, GitBranchesTreePopupStep.ACTION_PLACE, null, afterActionPerformed)
     }
   }
 
   private fun configureTreePresentation(tree: JTree) = with(tree) {
     ClientProperty.put(this, RenderingUtil.CUSTOM_SELECTION_BACKGROUND, Supplier { JBUI.CurrentTheme.Tree.background(true, true) })
     ClientProperty.put(this, RenderingUtil.CUSTOM_SELECTION_FOREGROUND, Supplier { JBUI.CurrentTheme.Tree.foreground(true, true) })
-
-    ClientProperty.put(this, RenderingUtil.SEPARATOR_ABOVE_PREDICATE, Predicate { treeStep.isSeparatorAboveRequired(it) })
 
     val renderer = Renderer(treeStep)
 
@@ -277,16 +305,22 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
 
     isRootVisible = false
     showsRootHandles = true
+    visibleRowCount = min(calculateTopLevelVisibleRows(), 20)
 
     cellRenderer = renderer
 
     accessibleContext.accessibleName = GitBundle.message("git.branches.popup.tree.accessible.name")
 
     ClientProperty.put(this, DefaultTreeUI.LARGE_MODEL_ALLOWED, true)
-    rowHeight = JBUIScale.scale(20)
+    rowHeight = treeRowHeight
     isLargeModel = true
     expandsSelectedPaths = true
   }
+
+  /**
+   * Local branches would be expanded by [GitBranchesTreePopupStep.getPreferredSelection].
+   */
+  private fun JTree.calculateTopLevelVisibleRows() = model.getChildCount(model.root) + model.getChildCount(GitBranchType.LOCAL)
 
   private fun overrideTreeActions(tree: JTree) = with(tree) {
     overrideBuiltInAction("toggle") {
@@ -351,12 +385,24 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
 
   override fun getInputMap(): InputMap = tree.inputMap
 
+  private val selectAllKeyStroke = KeymapUtil.getKeyStroke(ActionManager.getInstance().getAction(IdeActions.ACTION_SELECT_ALL).shortcutSet)
+
   override fun process(e: KeyEvent?) {
+    if (e == null) return
+
+    val eventStroke = KeyStroke.getKeyStroke(e.keyCode, e.modifiersEx, e.id == KeyEvent.KEY_RELEASED)
+    if (selectAllKeyStroke == eventStroke) {
+      return
+    }
+
     tree.processEvent(e)
   }
 
   override fun afterShow() {
     selectPreferred()
+    if (treeStep.isSpeedSearchEnabled) {
+      installSpeedSearchActions()
+    }
   }
 
   override fun updateSpeedSearchColors(error: Boolean) {} // update colors only after branches tree model update
@@ -474,7 +520,8 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
                           .filter { ClientProperty.get(it, Renderer.MAIN_ICON) == true }
                           .firstOrNull() ?: return false
 
-    return iconComponent.bounds.contains(point)
+    // todo: implement more precise check
+    return iconComponent.bounds.width >= point.x
   }
 
   override fun handleNextStep(nextStep: PopupStep<*>?, parentValue: Any) {
@@ -511,6 +558,8 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
 
     internal val POPUP_KEY = DataKey.create<GitBranchesTreePopup>("GIT_BRANCHES_TREE_POPUP")
 
+    private val treeRowHeight = if (ExperimentalUI.isNewUI()) JBUI.CurrentTheme.List.rowHeight() else JBUIScale.scale(22)
+
     @JvmStatic
     fun isEnabled() = Registry.`is`("git.branches.popup.tree", false)
                       && !ExperimentalUI.isNewUI()
@@ -526,12 +575,25 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
       return GitBranchesTreePopup(project, GitBranchesTreePopupStep(project, repositories, true))
     }
 
+    @JvmStatic
+    internal fun createTreeSeparator(text: @NlsContexts.Separator String? = null) =
+      SeparatorWithText().apply {
+        caption = text
+        border = JBUI.Borders.emptyTop(
+          if (text == null) treeRowHeight / 2 else JBUIScale.scale(SeparatorWithText.DEFAULT_H_GAP))
+      }
+
     private fun uiScope(parent: Disposable) =
       CoroutineScope(SupervisorJob() + Dispatchers.Main).also {
         Disposer.register(parent) { it.cancel() }
       }
 
     private class BranchesTree(model: TreeModel): Tree(model) {
+
+      init {
+        background = JBUI.CurrentTheme.Popup.BACKGROUND
+      }
+
       //Change visibility of processEvent to be able to delegate key events dispatched in WizardPopup directly to tree
       //This will allow to handle events like "copy-paste" in AbstractPopup.speedSearch
       public override fun processEvent(e: AWTEvent?) {
@@ -552,33 +614,36 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
 
       private val mainIconComponent = JLabel().apply {
         ClientProperty.put(this, MAIN_ICON, true)
-        border = JBUI.Borders.emptyRight(JBUI.CurrentTheme.ActionsList.elementIconGap())
+        border = JBUI.Borders.emptyRight(4)  // 6 px in spec, but label width is differed
       }
       private val mainTextComponent = SimpleColoredComponent().apply {
         isOpaque = false
-        border = JBUI.Borders.emptyBottom(1)
+        border = JBUI.Borders.empty()
       }
       private val secondaryLabel = JLabel().apply {
-        font = FontUtil.minusOne(font)
-        border = JBUI.Borders.empty(0, 10, 1, 5)
+        border = JBUI.Borders.emptyLeft(10)
         horizontalAlignment = SwingConstants.RIGHT
       }
       private val arrowLabel = JLabel().apply {
-        border = JBUI.Borders.empty(0, 2)
+        border = JBUI.Borders.emptyLeft(4) // 6 px in spec, but label width is differed
       }
       private val incomingOutgoingLabel = JLabel().apply {
-        border = JBUI.Borders.empty(0, 2)
+        border = JBUI.Borders.emptyLeft(10)
       }
 
       private val textPanel = JBUI.Panels.simplePanel()
-        .addToLeft(FlowLayoutWrapper(mainIconComponent).also { it.add(mainTextComponent) })
+        .addToLeft(JBUI.Panels.simplePanel(mainTextComponent)
+                     .addToLeft(mainIconComponent)
+                     .addToRight(incomingOutgoingLabel)
+                     .andTransparent())
         .addToCenter(secondaryLabel)
         .andTransparent()
 
       private val mainPanel = JBUI.Panels.simplePanel()
         .addToCenter(textPanel)
-        .addToRight(JBUI.Panels.simplePanel(incomingOutgoingLabel).addToRight(arrowLabel).andTransparent())
+        .addToRight(arrowLabel)
         .andTransparent()
+        .withBorder(JBUI.Borders.emptyRight(JBUI.CurrentTheme.ActionsList.cellPadding().right))
 
       override fun getTreeCellRendererComponent(tree: JTree?,
                                                 value: Any?,
@@ -602,19 +667,29 @@ class GitBranchesTreePopup(project: Project, step: GitBranchesTreePopupStep, par
           append(step.getText(userObject).orEmpty())
         }
 
-        secondaryLabel.apply {
-          text = step.getSecondaryText(userObject)
-          //todo: LAF color
-          foreground = if (selected) JBUI.CurrentTheme.Tree.foreground(true, true) else JBColor.GRAY
-        }
+        val (inOutIcon, inOutTooltip) = step.getIncomingOutgoingIconWithTooltip(userObject)
+        tree?.toolTipText = inOutTooltip
 
         incomingOutgoingLabel.apply {
-          icon = step.getIncomingOutgoingIcon(userObject)
+          icon = inOutIcon
+          isVisible = icon != null
         }
 
         arrowLabel.apply {
           isVisible = step.hasSubstep(userObject)
           icon = if (selected) AllIcons.Icons.Ide.MenuArrowSelected else AllIcons.Icons.Ide.MenuArrow
+        }
+
+        secondaryLabel.apply {
+          text = step.getSecondaryText(userObject)
+          //todo: LAF color
+          foreground = if (selected) JBUI.CurrentTheme.Tree.foreground(true, true) else JBColor.GRAY
+
+          border = if (!arrowLabel.isVisible && ExperimentalUI.isNewUI()) {
+            JBUI.Borders.empty(0, 10, 0, JBUI.CurrentTheme.Popup.Selection.innerInsets().right)
+          } else {
+            JBUI.Borders.emptyLeft(10)
+          }
         }
 
         if (tree != null && value != null) {

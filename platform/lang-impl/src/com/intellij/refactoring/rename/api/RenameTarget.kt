@@ -4,6 +4,7 @@ package com.intellij.refactoring.rename.api
 import com.intellij.model.Pointer
 import com.intellij.navigation.TargetPresentation
 import com.intellij.psi.search.SearchScope
+import com.intellij.refactoring.rename.impl.EmptyRenameValidator
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
 import com.intellij.util.concurrency.annotations.RequiresReadLock
 
@@ -15,7 +16,6 @@ import com.intellij.util.concurrency.annotations.RequiresReadLock
  * Lifecycle: single read action.
  *
  * @see com.intellij.find.usages.api.SearchTarget
- * @see RenameTargetRenameValidatorFactory
  */
 interface RenameTarget {
 
@@ -52,5 +52,13 @@ interface RenameTarget {
    * e.g. we search for short name of a Java class in strings and comments, and fully qualified name in plain text.
    */
   fun textTargets(context: ReplaceTextTargetContext): Collection<ReplaceTextTarget> = emptyList()
+
+  /**
+   * @return validator to be used when checking validity of new name during refactoring.
+   *
+   * TODO consider an EP
+   */
+  @JvmDefault
+  fun validator(): RenameValidator = RenameValidator.empty()
 
 }

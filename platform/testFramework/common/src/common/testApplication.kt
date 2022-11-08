@@ -66,6 +66,7 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 
 private var applicationInitializationResult: Result<Unit>? = null
+const val LEAKED_PROJECTS = "leakedProjects"
 
 val isApplicationInitialized: Boolean
   get() = applicationInitializationResult?.isSuccess == true
@@ -296,12 +297,12 @@ fun assertNonDefaultProjectsAreNotLeaked() {
     LeakHunter.checkNonDefaultProjectLeak()
   }
   catch (e: AssertionError) {
-    publishHeapDump("leakedProjects")
-    throw e
+    publishHeapDump(LEAKED_PROJECTS)
+    throw AssertionError(e)
   }
   catch (e: Exception) {
-    publishHeapDump("leakedProjects")
-    throw e
+    publishHeapDump(LEAKED_PROJECTS)
+    throw AssertionError(e)
   }
 }
 

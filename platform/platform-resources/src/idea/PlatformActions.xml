@@ -600,6 +600,15 @@
               <synonym key="action.TogglePresentationMode.text.enter"/>
               <synonym key="action.TogglePresentationMode.text.exit"/>
             </action>
+            <action id="ZoomInIdeAction" class="com.intellij.ide.actions.ZoomInIdeAction">
+              <synonym key="action.ZoomInIdeAction.text"/>
+            </action>
+            <action id="ZoomOutIdeAction" class="com.intellij.ide.actions.ZoomOutIdeAction">
+              <synonym key="action.ZoomOutIdeAction.text"/>
+            </action>
+            <action id="ResetIdeScaleAction" class="com.intellij.ide.actions.ResetIdeScaleAction">
+              <synonym key="action.ResetIdeScaleAction.text"/>
+            </action>
             <action id="ToggleDistractionFreeMode" class="com.intellij.ide.actions.ToggleDistractionFreeModeAction">
               <synonym key="action.ToggleDistractionFreeMode.enter"/>
               <synonym key="action.ToggleDistractionFreeMode.exit"/>
@@ -730,6 +739,15 @@
         <action id="ZoomCurrentWindow" class="com.intellij.ide.actions.ZoomCurrentWindowAction"/>
         <action id="StoreDefaultLayout" class="com.intellij.ide.actions.StoreDefaultLayoutAction"/>
         <action id="RestoreDefaultLayout" class="com.intellij.ide.actions.RestoreDefaultLayoutAction"/>
+        <group id="StoreLayoutGroup" popup="true">
+          <group id="StoreNamedLayoutGroup" class="com.intellij.ide.actions.StoreNamedLayoutActionGroup"/>
+          <separator/>
+          <action id="StoreNewLayout" class="com.intellij.ide.actions.StoreNewLayoutAction">
+            <override-text place="MainMenu"/>
+          </action>
+        </group>
+        <group id="RestoreNamedLayoutGroup" class="com.intellij.ide.actions.RestoreNamedLayoutActionGroup" popup="true"/>
+        <group id="DeleteNamedLayoutGroup" class="com.intellij.ide.actions.DeleteNamedLayoutActionGroup" popup="true"/>
         <separator/>
         <group id="ActiveToolwindowGroup" popup="true">
           <action id="HideActiveWindow" class="com.intellij.ide.actions.HideToolWindowAction"/>
@@ -1113,6 +1131,7 @@
       <action id="ChangeKeymap" class="com.intellij.ide.actions.QuickChangeKeymapAction"/>
       <action id="ChangeView" class="com.intellij.ide.actions.QuickChangeViewModeAction"/>
       <action id="ChangeLaf" class="com.intellij.ide.actions.QuickChangeLookAndFeel"/>
+      <action id="ChangeToolWindowLayout" class="com.intellij.ide.actions.QuickChangeToolWindowLayout"/>
     </group>
 
     <action id="MaintenanceAction" class="com.intellij.ide.actions.MaintenanceAction"/>

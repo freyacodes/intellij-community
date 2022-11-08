@@ -695,10 +695,7 @@ public final class IconLoader {
     return new FilteredIcon(icon, filterSupplier);
   }
 
-  @NotNull
-  static JBImageIcon renderFilteredIcon(@NotNull Icon icon,
-                                        @NotNull Supplier<? extends RGBImageFilter> filterSupplier,
-                                        @Nullable Component ancestor) {
+  static double getScaleToRenderIcon(@NotNull Icon icon, @Nullable Component ancestor) {
     double scale;
     ScaleContextSupport ctxSupport = getScaleContextSupport(icon);
     if (ctxSupport == null) {
@@ -707,6 +704,14 @@ public final class IconLoader {
     else {
       scale = JreHiDpiUtil.isJreHiDPI((GraphicsConfiguration)null) ? ctxSupport.getScale(ScaleType.SYS_SCALE) : 1.0f;
     }
+    return scale;
+  }
+
+  @NotNull
+  static JBImageIcon renderFilteredIcon(@NotNull Icon icon,
+                                        double scale,
+                                        @NotNull Supplier<? extends RGBImageFilter> filterSupplier,
+                                        @Nullable Component ancestor) {
     @SuppressWarnings("UndesirableClassUsage")
     BufferedImage image =
       new BufferedImage((int)(scale * icon.getIconWidth()), (int)(scale * icon.getIconHeight()), BufferedImage.TYPE_INT_ARGB);
@@ -715,7 +720,10 @@ public final class IconLoader {
     graphics.setColor(Gray.TRANSPARENT);
     graphics.fillRect(0, 0, icon.getIconWidth(), icon.getIconHeight());
     graphics.scale(scale, scale);
-    icon.paintIcon(ancestor != null ? ancestor : fakeComponent, graphics, 0, 0);
+    // We want to paint here on the fake component:
+    // painting on the real component will have other coordinates at least.
+    // Also, it may be significant if the icon contains updatable icon (e.g. DeferredIcon), and it will schedule incorrect repaint
+    icon.paintIcon(fakeComponent, graphics, 0, 0);
 
     graphics.dispose();
 

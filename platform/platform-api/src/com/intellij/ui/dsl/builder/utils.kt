@@ -3,6 +3,8 @@ package com.intellij.ui.dsl.builder
 
 import com.intellij.ide.BrowserUtil
 import javax.swing.JComponent
+import javax.swing.JLabel
+import javax.swing.JPanel
 import javax.swing.event.HyperlinkEvent
 
 /**
@@ -24,13 +26,22 @@ enum class DslComponentProperty {
   VISUAL_PADDINGS,
 
   /**
-   * By default, almost every control have [SpacingConfiguration.verticalComponentGap] above and below it.
-   * This flag disables such gap below the control. Should be used in very rare situations (e.g. row with label **and** some additional
-   * label-kind controls above related to the label control), because most standard cases are covered by Kotlin UI DSL API
+   * By default, almost every component have [SpacingConfiguration.verticalComponentGap] above and below it.
+   * This flag disables such gap below the component. Should be used in very rare situations (e.g. row with label **and** some additional
+   * label-kind components above related to the label component), because most standard cases are covered by Kotlin UI DSL API
    *
    * Value: [Boolean]
    */
   NO_BOTTOM_GAP,
+
+  /**
+   * By default, almost every component have [SpacingConfiguration.verticalComponentGap] above and below it.
+   * Some components are compound (usually based on [JPanel]) and Kotlin UI DSL doesn't add vertical gaps around it by default.
+   * Setting this property forces adding vertical gaps.
+   *
+   * Value: [Boolean]
+   */
+  TOP_BOTTOM_GAP,
 
   /**
    * By default, we're trying to assign [javax.swing.JLabel.setLabelFor] for the cell component itself.
@@ -38,7 +49,16 @@ enum class DslComponentProperty {
    *
    * Value: [JComponent]
    */
-  LABEL_FOR
+  // todo replace usage by INTERACTIVE_COMPONENT and deprecate
+  LABEL_FOR,
+
+  /**
+   * Some compound components can contain several components inside itself. [INTERACTIVE_COMPONENT] points to main interactive one,
+   * which is assigned to [JLabel.labelFor] and which is used as a component for data validation
+   *
+   * Value: [JComponent]
+   */
+  INTERACTIVE_COMPONENT
 }
 
 /**

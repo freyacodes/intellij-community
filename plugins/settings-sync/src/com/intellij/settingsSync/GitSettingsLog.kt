@@ -16,11 +16,8 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeResult.MergeStatus.CONFLICTING
 import org.eclipse.jgit.api.ResetCommand
 import org.eclipse.jgit.api.errors.EmptyCommitException
-import org.eclipse.jgit.lib.Constants
+import org.eclipse.jgit.lib.*
 import org.eclipse.jgit.lib.Constants.R_HEADS
-import org.eclipse.jgit.lib.ObjectId
-import org.eclipse.jgit.lib.Ref
-import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.merge.MergeStrategy
 import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
@@ -151,17 +148,32 @@ internal class GitSettingsLog(private val settingsSyncStorage: Path,
 
     addCommand.call()
 
-    commit(message, snapshot.metaInfo.dateCreated)
+    val info = snapshot.metaInfo.appInfo
+    val body = if (info != null) {
+      val thisOrThat = if (info.applicationId == SettingsSyncLocalSettings.getInstance().applicationId) "[this]" else "[other]"
+      "\n\n" + """
+        id:     $thisOrThat ${info.applicationId}
+        user:   ${info.userName}
+        host:   ${info.hostName}
+        config: ${info.configFolder}
+      """.trimIndent()
+    }
+    else {
+      ""
+    }
+    commit("$message$body", snapshot.metaInfo.dateCreated)
   }
 
   private fun commit(message: String, dateCreated: Instant? = null) {
     try {
       // Don't allow empty commit: sometimes the stream provider can notify about changes but there are no actual changes on disk
+      val mockGpgConfig = GpgConfig("", GpgConfig.GpgFormat.OPENPGP, "")
       val commit = git.commit()
         .setMessage(message)
         .setAllowEmpty(false)
         .setNoVerify(true)
         .setSign(false)
+        .setGpgConfig(mockGpgConfig)
         .call()
 
       if (dateCreated != null) {

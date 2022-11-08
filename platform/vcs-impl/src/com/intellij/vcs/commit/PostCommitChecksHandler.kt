@@ -3,6 +3,7 @@ package com.intellij.vcs.commit
 
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
+import com.intellij.notification.SingletonNotificationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
@@ -35,6 +36,9 @@ class PostCommitChecksHandler(val project: Project) {
     fun getInstance(project: Project): PostCommitChecksHandler = project.service()
   }
 
+  private val postCommitCheckErrorNotifications = SingletonNotificationManager(VcsNotifier.IMPORTANT_ERROR_NOTIFICATION.displayId,
+                                                                               NotificationType.WARNING)
+
   private val pendingCommits = mutableListOf<StaticCommitInfo>()
   private var lastCommitProblems: List<CommitProblem>? = null
 
@@ -47,6 +51,7 @@ class PostCommitChecksHandler(val project: Project) {
 
   fun resetPendingCommits() {
     pendingCommits.clear()
+    postCommitCheckErrorNotifications.clear()
     lastCommitProblems = null
     lastJob?.cancel()
   }
@@ -70,9 +75,11 @@ class PostCommitChecksHandler(val project: Project) {
       if (problems.isEmpty()) {
         LOG.debug("Post-commit checks succeeded")
         pendingCommits.clear()
+        postCommitCheckErrorNotifications.clear()
         lastCommitProblems = null
       }
       else {
+        postCommitCheckErrorNotifications.clear()
         reportPostCommitChecksFailure(problems)
         lastCommitProblems = problems
       }
@@ -153,10 +160,7 @@ class PostCommitChecksHandler(val project: Project) {
     val changeConverters = commitInfo.affectedVcses.mapNotNull { vcs -> vcs.checkinEnvironment?.postCommitChangeConverter }
     if (changeConverters.isEmpty()) LOG.error("Post-commit change converters not found for ${commitInfo.affectedVcses}")
 
-    val commitContext = commitInfo.commitContext
-    commitContext.isPostCommitCheck = true
-
-    val staticChanges = collectChangesFor(commitContext, changeConverters)
+    val staticChanges = collectChangesFor(commitInfo.commitContext, changeConverters)
 
     return PostCommitInfo(commitInfo, staticChanges ?: commitInfo.committedChanges)
   }
@@ -181,19 +185,17 @@ class PostCommitChecksHandler(val project: Project) {
   }
 
   private fun reportPostCommitChecksFailure(problems: List<CommitProblem>) {
-    val notification = VcsNotifier.IMPORTANT_ERROR_NOTIFICATION
-      .createNotification(VcsBundle.message("post.commit.checks.failed.notification.title"),
-                          problems.joinToString("<br/>") { it.text },
-                          NotificationType.ERROR)
-      .setDisplayId(VcsNotificationIdsHolder.POST_COMMIT_CHECKS_FAILED)
+    postCommitCheckErrorNotifications.notify(VcsBundle.message("post.commit.checks.failed.notification.title"),
+                                             problems.joinToString("<br/>") { it.text },
+                                             project) { notification ->
+      notification.setDisplayId(VcsNotificationIdsHolder.POST_COMMIT_CHECKS_FAILED)
 
-    for (problem in problems.filterIsInstance<CommitProblemWithDetails>()) {
-      notification.addAction(NotificationAction.createSimple(problem.showDetailsAction) {
-        problem.showDetails(project)
-      })
+      for (problem in problems.filterIsInstance<CommitProblemWithDetails>()) {
+        notification.addAction(NotificationAction.createSimple(problem.showDetailsAction) {
+          problem.showDetails(project)
+        })
+      }
     }
-
-    notification.notify(project)
   }
 
   fun createPushStatusNotification(closeDialog: Runnable): JComponent? {
@@ -217,7 +219,7 @@ class PostCommitChecksHandler(val project: Project) {
         .text(VcsBundle.message("post.commit.checks.failed.push.dialog.notification.text", text))
       for (problem in problems) {
         if (problem is CommitProblemWithDetails) {
-          panel.createActionLabel(problem.showDetailsAction) {
+          panel.createActionLabel(problem.showDetailsAction.dropMnemonic()) {
             closeDialog.run()
             problem.showDetails(project)
           }
@@ -230,11 +232,12 @@ class PostCommitChecksHandler(val project: Project) {
   }
 }
 
-private class PostCommitInfo(
+internal class PostCommitInfo(
   commitInfo: StaticCommitInfo,
   staticChanges: List<Change>
 ) : CommitInfo {
   override val commitContext: CommitContext = commitInfo.commitContext
+  override val isVcsCommit: Boolean = commitInfo.isVcsCommit
   override val executor: CommitExecutor? = commitInfo.executor
   override val commitActionText: String = commitInfo.commitActionText
   override val committedChanges: List<Change> = staticChanges

@@ -5,6 +5,7 @@ import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInsight.daemon.impl.TrafficLightRenderer;
 import com.intellij.codeInsight.intention.IntentionManager;
 import com.intellij.codeInspection.ex.InspectionProfileWrapper;
+import com.intellij.ide.actions.IdeScaleTransformer;
 import com.intellij.ide.ui.LafManager;
 import com.intellij.ide.ui.LafManagerListener;
 import com.intellij.ide.ui.UISettings;
@@ -61,7 +62,7 @@ import static com.intellij.util.ui.JBUI.Panels.simplePanel;
 import static com.intellij.vcs.commit.message.CommitMessageInspectionProfile.getBodyLimitSettings;
 import static javax.swing.BorderFactory.createEmptyBorder;
 
-public class CommitMessage extends JPanel implements Disposable, DataProvider, CommitMessageUi, CommitMessageI, LafManagerListener {
+public class CommitMessage extends JPanel implements Disposable, DataProvider, CommitMessageUi, CommitMessageI {
   public static final Key<CommitMessage> DATA_KEY = Key.create("Vcs.CommitMessage.Panel");
   public static final Key<Supplier<Iterable<Change>>> CHANGES_SUPPLIER_KEY = Key.create("Vcs.CommitMessage.CompletionContext");
 
@@ -84,10 +85,7 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
 
     // We have to wrap the colorsScheme into a scheme delegate in order to avoid editing the global scheme
     colorsScheme = editor.createBoundColorSchemeDelegate(colorsScheme);
-    UISettings settings = UISettings.getInstance();
-    if (settings.getPresentationMode()) {
-      colorsScheme.setEditorFontSize(settings.getPresentationModeFontSize());
-    }
+    colorsScheme.setEditorFontSize(IdeScaleTransformer.INSTANCE.getCurrentEditorFontSize());
 
     return colorsScheme;
   }
@@ -141,7 +139,6 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
     setBorder(createEmptyBorder());
 
     updateOnInspectionProfileChanged(project);
-    ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(LafManagerListener.TOPIC, this);
   }
 
   @Override
@@ -166,8 +163,11 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
   }
 
   @Override
-  public void lookAndFeelChanged(@NotNull LafManager source) {
-    Editor editor = myEditorField.getEditor();
+  public void updateUI() {
+    super.updateUI();
+
+    //noinspection ConstantValue - called from super.<init>
+    Editor editor = myEditorField != null ? myEditorField.getEditor() : null;
     if (editor instanceof EditorEx) COLOR_SCHEME_FOR_CURRENT_UI_THEME_CUSTOMIZATION.customize((EditorEx)editor);
   }
 
@@ -324,8 +324,8 @@ public class CommitMessage extends JPanel implements Disposable, DataProvider, C
       PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(editor.getDocument());
 
       if (file != null) {
-        InspectionProfileWrapper.setCustomInspectionProfileWrapperTemporarily(file,
-                         profile -> new InspectionProfileWrapper(CommitMessageInspectionProfile.getInstance(myProject)));
+        InspectionProfileWrapper.setCustomInspectionProfileWrapperTemporarily(file, profile ->
+          new InspectionProfileWrapper(CommitMessageInspectionProfile.getInstance(myProject)));
       }
       editor.putUserData(IntentionManager.SHOW_INTENTION_OPTIONS_KEY, false);
       ((EditorMarkupModelImpl)editor.getMarkupModel())

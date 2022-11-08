@@ -800,9 +800,12 @@ public final class PluginDetailsPageComponent extends MultiPanel {
             }
 
             IntellijPluginMetadata metadata = marketplace.loadPluginMetadata(node);
-            if (metadata != null && metadata.getScreenshots() != null) {
-              pluginNode.setScreenShots(metadata.getScreenshots());
-              pluginNode.setExternalPluginIdForScreenShots(node.getExternalPluginId());
+            if (metadata != null) {
+              if (metadata.getScreenshots() != null) {
+                pluginNode.setScreenShots(metadata.getScreenshots());
+                pluginNode.setExternalPluginIdForScreenShots(node.getExternalPluginId());
+              }
+              metadata.toPluginNode(pluginNode);
             }
 
             loadReviews(marketplace, node, pluginNode);
@@ -817,8 +820,11 @@ public final class PluginDetailsPageComponent extends MultiPanel {
 
             if (node.getScreenShots() == null && node.getExternalPluginIdForScreenShots() != null) {
               IntellijPluginMetadata metadata = marketplace.loadPluginMetadata(node, node.getExternalPluginIdForScreenShots());
-              if (metadata != null && metadata.getScreenshots() != null) {
-                node.setScreenShots(metadata.getScreenshots());
+              if (metadata != null) {
+                if (metadata.getScreenshots() != null) {
+                  node.setScreenShots(metadata.getScreenshots());
+                }
+                metadata.toPluginNode(node);
               }
             }
             if (node.getReviewComments() == null) {
@@ -872,6 +878,12 @@ public final class PluginDetailsPageComponent extends MultiPanel {
     showPlugin();
 
     select(0, true);
+
+    if (myPlugin instanceof PluginNode) {
+      if (((PluginNode)myPlugin).getSuggestedCommercialIde() != null) {
+        myInstallButton.setText(IdeBundle.message("action.AnActionButton.text.upgrade"));
+      }
+    }
   }
 
   private enum EmptyState {

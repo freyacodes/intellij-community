@@ -1003,6 +1003,59 @@ public abstract class QuickFixTestGenerated extends AbstractQuickFixTest {
     }
 
     @RunWith(JUnit3RunnerWithInners.class)
+    @TestMetadata("testData/quickfix/addFunModifier")
+    public static class AddFunModifier extends AbstractQuickFixTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+        }
+
+        @TestMetadata("asFirstArgument.kt")
+        public void testAsFirstArgument() throws Exception {
+            runTest("testData/quickfix/addFunModifier/asFirstArgument.kt");
+        }
+
+        @TestMetadata("asLastArgument.kt")
+        public void testAsLastArgument() throws Exception {
+            runTest("testData/quickfix/addFunModifier/asLastArgument.kt");
+        }
+
+        @TestMetadata("hasArguments.kt")
+        public void testHasArguments() throws Exception {
+            runTest("testData/quickfix/addFunModifier/hasArguments.kt");
+        }
+
+        @TestMetadata("hasNoArguments.kt")
+        public void testHasNoArguments() throws Exception {
+            runTest("testData/quickfix/addFunModifier/hasNoArguments.kt");
+        }
+
+        @TestMetadata("nonSource.kt")
+        public void testNonSource() throws Exception {
+            runTest("testData/quickfix/addFunModifier/nonSource.kt");
+        }
+
+        @TestMetadata("notSam.kt")
+        public void testNotSam() throws Exception {
+            runTest("testData/quickfix/addFunModifier/notSam.kt");
+        }
+
+        @TestMetadata("notSam2.kt")
+        public void testNotSam2() throws Exception {
+            runTest("testData/quickfix/addFunModifier/notSam2.kt");
+        }
+
+        @TestMetadata("notSam3.kt")
+        public void testNotSam3() throws Exception {
+            runTest("testData/quickfix/addFunModifier/notSam3.kt");
+        }
+
+        @TestMetadata("simple.kt")
+        public void testSimple() throws Exception {
+            runTest("testData/quickfix/addFunModifier/simple.kt");
+        }
+    }
+
+    @RunWith(JUnit3RunnerWithInners.class)
     @TestMetadata("testData/quickfix/addGenericUpperBound")
     public static class AddGenericUpperBound extends AbstractQuickFixTest {
         private void runTest(String testDataFilePath) throws Exception {
@@ -3465,6 +3518,19 @@ public abstract class QuickFixTestGenerated extends AbstractQuickFixTest {
             public void testNonVarargSpread() throws Exception {
                 runTest("testData/quickfix/checkArguments/nonVarargSpread.kt");
             }
+        }
+    }
+
+    @RunWith(JUnit3RunnerWithInners.class)
+    @TestMetadata("testData/quickfix/compilerError")
+    public static class CompilerError extends AbstractQuickFixTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+        }
+
+        @TestMetadata("noInspectionOptions.kt")
+        public void testNoInspectionOptions() throws Exception {
+            runTest("testData/quickfix/compilerError/noInspectionOptions.kt");
         }
     }
 
@@ -11052,6 +11118,11 @@ public abstract class QuickFixTestGenerated extends AbstractQuickFixTest {
             @TestMetadata("changeParameterTypeAbstractSuperclass.kt")
             public void testChangeParameterTypeAbstractSuperclass() throws Exception {
                 runTest("testData/quickfix/override/nothingToOverride/changeParameterTypeAbstractSuperclass.kt");
+            }
+
+            @TestMetadata("changeParameterTypeDefinitelyNotNull.kt")
+            public void testChangeParameterTypeDefinitelyNotNull() throws Exception {
+                runTest("testData/quickfix/override/nothingToOverride/changeParameterTypeDefinitelyNotNull.kt");
             }
 
             @TestMetadata("changeParameterTypeInTrait.kt")

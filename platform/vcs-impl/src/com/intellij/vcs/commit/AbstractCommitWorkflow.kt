@@ -1,6 +1,7 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.vcs.commit
 
+import com.intellij.BundleBase
 import com.intellij.CommonBundle.getCancelButtonText
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationNamesInfo
@@ -14,6 +15,8 @@ import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages.*
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.UserDataHolder
+import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vcs.AbstractVcs
 import com.intellij.openapi.vcs.CheckinProjectPanel
@@ -41,10 +44,12 @@ import kotlin.reflect.KProperty
 
 private val LOG = logger<AbstractCommitWorkflow>()
 
-@Nls
-internal fun String.removeEllipsisSuffix() = StringUtil.removeEllipsisSuffix(this)
+
+internal fun @Nls String.removeEllipsisSuffix(): @Nls String = StringUtil.removeEllipsisSuffix(this)
 
 internal fun cleanActionText(text: @Nls String): @Nls String = UIUtil.removeMnemonic(text).removeEllipsisSuffix()
+
+internal fun @Nls String.dropMnemonic(): @Nls String = this.replace(BundleBase.MNEMONIC_STRING, "")
 
 fun CommitOptions.saveState() = allOptions.forEach { it.saveState() }
 fun CommitOptions.restoreState() = allOptions.forEach { it.restoreState() }
@@ -54,17 +59,41 @@ private class CommitProperty<T>(private val key: Key<T>, private val defaultValu
   override fun setValue(thisRef: CommitContext, property: KProperty<*>, value: T) = thisRef.putUserData(key, value)
 }
 
-fun commitProperty(key: Key<Boolean>): ReadWriteProperty<CommitContext, Boolean> = commitProperty(key, false)
-fun <T> commitProperty(key: Key<T>, defaultValue: T): ReadWriteProperty<CommitContext, T> = CommitProperty(key, defaultValue)
+private val COMMIT_EXECUTOR_PROPERTY_MAP = Key.create<UserDataHolder>("Vcs.Commit.ExecutorPropertyMap")
+internal fun CommitContext.cleanCommitExecutorProperties() {
+  putUserData(COMMIT_EXECUTOR_PROPERTY_MAP, null)
+}
 
-private val IS_POST_COMMIT_CHECK_KEY = Key.create<Boolean>("Vcs.Commit.IsPostCommitCheck")
-var CommitContext.isPostCommitCheck: Boolean by commitProperty(IS_POST_COMMIT_CHECK_KEY)
+private class CommitExecutorProperty<T>(private val key: Key<T>, private val defaultValue: T) : ReadWriteProperty<CommitContext, T> {
+  override fun getValue(thisRef: CommitContext, property: KProperty<*>): T {
+    return thisRef.getUserData(COMMIT_EXECUTOR_PROPERTY_MAP)?.getUserData(key) ?: defaultValue
+  }
+
+  override fun setValue(thisRef: CommitContext, property: KProperty<*>, value: T) {
+    var map: UserDataHolder? = thisRef.getUserData(COMMIT_EXECUTOR_PROPERTY_MAP)
+    if (map == null) {
+      map = UserDataHolderBase()
+      thisRef.putUserData(COMMIT_EXECUTOR_PROPERTY_MAP, map)
+    }
+    map.putUserData(key, value)
+  }
+}
+
+fun commitProperty(key: Key<Boolean>): ReadWriteProperty<CommitContext, Boolean> = commitProperty(key, false)
+fun <T> commitProperty(key: Key<T>, defaultValue: T): ReadWriteProperty<CommitContext, T> =
+  CommitProperty(key, defaultValue)
+
+fun commitExecutorProperty(key: Key<Boolean>): ReadWriteProperty<CommitContext, Boolean> = commitExecutorProperty(key, false)
+fun <T> commitExecutorProperty(key: Key<T>, defaultValue: T): ReadWriteProperty<CommitContext, T> =
+  CommitExecutorProperty(key, defaultValue)
+
+val CommitInfo.isPostCommitCheck: Boolean get() = this is PostCommitInfo
 
 private val IS_AMEND_COMMIT_MODE_KEY = Key.create<Boolean>("Vcs.Commit.IsAmendCommitMode")
 var CommitContext.isAmendCommitMode: Boolean by commitProperty(IS_AMEND_COMMIT_MODE_KEY)
 
 private val IS_CLEANUP_COMMIT_MESSAGE_KEY = Key.create<Boolean>("Vcs.Commit.IsCleanupCommitMessage")
-var CommitContext.isCleanupCommitMessage: Boolean by commitProperty(IS_CLEANUP_COMMIT_MESSAGE_KEY)
+var CommitContext.isCleanupCommitMessage: Boolean by commitExecutorProperty(IS_CLEANUP_COMMIT_MESSAGE_KEY)
 
 interface CommitWorkflowListener : EventListener {
   fun vcsesChanged() = Unit
@@ -170,6 +199,7 @@ abstract class AbstractCommitWorkflow(val project: Project) {
 
     isExecuting = false
     eventDispatcher.multicaster.executionEnded()
+    commitContext.cleanCommitExecutorProperties()
   }
 
   fun addListener(listener: CommitWorkflowListener, parent: Disposable) =
@@ -365,17 +395,25 @@ abstract class AbstractCommitWorkflow(val project: Project) {
     }
 
     suspend fun runCommitCheck(project: Project, commitCheck: CommitCheck, commitInfo: CommitInfo): CommitProblem? {
-      if (DumbService.isDumb(project) && !DumbService.isDumbAware(commitCheck)) {
-        LOG.debug("Skipped commit check in dumb mode $commitCheck")
-        return null
+      try {
+        if (DumbService.isDumb(project) && !DumbService.isDumbAware(commitCheck)) {
+          LOG.debug("Skipped commit check in dumb mode $commitCheck")
+          return null
+        }
+
+        LOG.debug("Running commit check $commitCheck")
+        val ctx = coroutineContext
+        ctx.ensureActive()
+        ctx.progressSink?.update(text = "", details = "")
+
+        return commitCheck.runCheck(commitInfo)
       }
-
-      LOG.debug("Running commit check $commitCheck")
-      val ctx = coroutineContext
-      ctx.ensureActive()
-      ctx.progressSink?.update(text = "", details = "")
-
-      return commitCheck.runCheck(commitInfo)
+      catch (e: CancellationException) {
+        throw e
+      }
+      catch (e: Throwable) {
+        return CommitProblem.createError(e)
+      }
     }
   }
 }

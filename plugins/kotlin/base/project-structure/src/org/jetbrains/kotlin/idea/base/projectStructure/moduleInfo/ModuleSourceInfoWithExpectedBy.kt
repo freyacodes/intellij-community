@@ -2,11 +2,9 @@
 package org.jetbrains.kotlin.idea.base.projectStructure.moduleInfo
 
 import com.intellij.openapi.projectRoots.Sdk
-import org.jetbrains.kotlin.analyzer.ModuleInfo
 import org.jetbrains.kotlin.caches.project.cacheByClassInvalidatingOnRootModifications
 import org.jetbrains.kotlin.config.SourceKotlinRootType
 import org.jetbrains.kotlin.config.TestSourceKotlinRootType
-import org.jetbrains.kotlin.idea.base.facet.additionalVisibleModules
 import org.jetbrains.kotlin.idea.base.facet.implementedModules
 import org.jetbrains.kotlin.idea.base.projectStructure.ModuleDependencyCollector
 import org.jetbrains.kotlin.idea.base.projectStructure.productionSourceInfo
@@ -26,16 +24,10 @@ sealed class ModuleSourceInfoWithExpectedBy(private val forProduction: Boolean) 
             .toList()
     }
 
-    override fun sdk(): Sdk? = module.cacheByClassInvalidatingOnRootModifications(KeyForSdks::class.java) {
+    final override fun sdk(): Sdk? = module.cacheByClassInvalidatingOnRootModifications(keyForSdk()::class.java) {
         super.sdk()
     }
 
-    override fun modulesWhoseInternalsAreVisible(): Collection<ModuleInfo> {
-        return module.cacheByClassInvalidatingOnRootModifications(KeyForModulesWhoseInternalsAreVisible::class.java) {
-            module.additionalVisibleModules.mapNotNull { if (forProduction) it.productionSourceInfo else it.testSourceInfo }
-        }
-    }
+    protected abstract fun keyForSdk(): Any
 
-    private object KeyForModulesWhoseInternalsAreVisible
-    private object KeyForSdks
 }

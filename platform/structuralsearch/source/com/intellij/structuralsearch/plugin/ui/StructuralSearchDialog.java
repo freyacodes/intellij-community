@@ -310,8 +310,6 @@ public final class StructuralSearchDialog extends DialogWrapper implements Docum
       replaceOptions.setToShortenFQN(myShortenFqn.isSelected());
       replaceOptions.setToUseStaticImport(myStaticImport.isSelected());
       replaceOptions.setToReformatAccordingToStyle(myReformat.isSelected());
-
-
     }
     return result;
   }
@@ -329,6 +327,12 @@ public final class StructuralSearchDialog extends DialogWrapper implements Docum
         setTextForEditor(text.trim(), mySearchCriteriaEdit);
         setTextForEditor(text, myReplaceCriteriaEdit);
         myScopePanel.setScopesFromContext(null);
+        final Document document = editor.getDocument();
+        final PsiFile file = PsiDocumentManager.getInstance(myProject).getPsiFile(document);
+        if (file != null) {
+          final Language language = file.getLanguage();
+          myFileTypeChooser.setSelectedItem(language.getAssociatedFileType(), language, null);
+        }
         ApplicationManager.getApplication().invokeLater(() -> startTemplate());
         return;
       }
@@ -1275,7 +1279,6 @@ public final class StructuralSearchDialog extends DialogWrapper implements Docum
     }
 
     private void init() {
-      getTemplatePresentation().setText(SSRBundle.messagePointer(myReplace ? "switch.to.search.action" : "switch.to.replace.action"));
       getTemplatePresentation().setIcon(AllIcons.Actions.Refresh);
       final ActionManager actionManager = ActionManager.getInstance();
       final ShortcutSet searchShortcutSet = actionManager.getAction("StructuralSearchPlugin.StructuralSearchAction").getShortcutSet();
@@ -1284,6 +1287,16 @@ public final class StructuralSearchDialog extends DialogWrapper implements Docum
                                       ? new CompositeShortcutSet(searchShortcutSet, replaceShortcutSet)
                                       : new CompositeShortcutSet(replaceShortcutSet, searchShortcutSet);
       registerCustomShortcutSet(shortcutSet, getRootPane());
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      e.getPresentation().setText(SSRBundle.messagePointer(myReplace ? "switch.to.search.action" : "switch.to.replace.action"));
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.BGT;
     }
   }
 

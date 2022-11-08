@@ -9,24 +9,30 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.jetbrains.plugins.gitlab.api.data.GitLabAccessLevel
 import org.jetbrains.plugins.gitlab.api.dto.GitLabMemberDTO
 import org.jetbrains.plugins.gitlab.api.dto.GitLabUserDTO
+import org.jetbrains.plugins.gitlab.mergerequest.api.dto.GitLabLabelDTO
 import org.jetbrains.plugins.gitlab.mergerequest.data.loaders.GitLabProjectDetailsLoader
 import org.jetbrains.plugins.gitlab.mergerequest.ui.filters.GitLabMergeRequestsFiltersValue.MergeRequestStateFilterValue
 import org.jetbrains.plugins.gitlab.mergerequest.ui.filters.GitLabMergeRequestsFiltersValue.MergeRequestsMemberFilterValue
 
 internal interface GitLabMergeRequestsFiltersViewModel : ReviewListSearchPanelViewModel<GitLabMergeRequestsFiltersValue, GitLabMergeRequestsQuickFilter> {
+  val currentUser: GitLabUserDTO
   val avatarIconsProvider: IconsProvider<GitLabUserDTO>
 
   val stateFilterState: MutableStateFlow<MergeRequestStateFilterValue?>
   val authorFilterState: MutableStateFlow<MergeRequestsMemberFilterValue?>
   val assigneeFilterState: MutableStateFlow<MergeRequestsMemberFilterValue?>
   val reviewerFilterState: MutableStateFlow<MergeRequestsMemberFilterValue?>
+  val labelFilterState: MutableStateFlow<GitLabMergeRequestsFiltersValue.LabelFilterValue?>
 
   suspend fun getMergeRequestMembers(): List<GitLabMemberDTO>
+
+  suspend fun getLabels(): List<GitLabLabelDTO>
 }
 
 internal class GitLabMergeRequestsFiltersViewModelImpl(
   scope: CoroutineScope,
   historyModel: GitLabMergeRequestsFiltersHistoryModel,
+  override val currentUser: GitLabUserDTO,
   override val avatarIconsProvider: IconsProvider<GitLabUserDTO>,
   private val projectDetailsLoader: GitLabProjectDetailsLoader
 ) : GitLabMergeRequestsFiltersViewModel,
@@ -41,7 +47,11 @@ internal class GitLabMergeRequestsFiltersViewModelImpl(
   }
 
   override val quickFilters: List<GitLabMergeRequestsQuickFilter> = listOf(
-    GitLabMergeRequestsQuickFilter.Open()
+    GitLabMergeRequestsQuickFilter.Open(),
+    GitLabMergeRequestsQuickFilter.IncludeMyChanges(currentUser),
+    GitLabMergeRequestsQuickFilter.NeedMyReview(currentUser),
+    GitLabMergeRequestsQuickFilter.AssignedToMe(currentUser),
+    GitLabMergeRequestsQuickFilter.Closed(),
   )
 
   override val stateFilterState = searchState.partialState(GitLabMergeRequestsFiltersValue::state) {
@@ -59,6 +69,12 @@ internal class GitLabMergeRequestsFiltersViewModelImpl(
   override val reviewerFilterState = searchState.partialState(GitLabMergeRequestsFiltersValue::reviewer) {
     copy(reviewer = it)
   }
+
+  override val labelFilterState = searchState.partialState(GitLabMergeRequestsFiltersValue::label) {
+    copy(label = it)
+  }
+
+  override suspend fun getLabels(): List<GitLabLabelDTO> = projectDetailsLoader.projectLabels()
 
   override suspend fun getMergeRequestMembers(): List<GitLabMemberDTO> = projectDetailsLoader.projectMembers().filter { member ->
     isValidMergeRequestAccessLevel(member.accessLevel)

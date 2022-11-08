@@ -11,6 +11,7 @@ import com.intellij.openapi.command.CommandListener;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -27,6 +28,7 @@ import com.intellij.openapi.vfs.newvfs.NewVirtualFile;
 import com.intellij.openapi.vfs.newvfs.events.*;
 import com.intellij.util.SmartList;
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.SmartHashSet;
 import com.intellij.vcsUtil.VcsUtil;
@@ -158,6 +160,15 @@ public abstract class VcsVFSListener implements Disposable {
       });
     }
 
+    private void clearAllPendingTasks() {
+      withLock(PROCESSING_LOCK.writeLock(), () -> {
+        myAddedFiles.clear();
+        myDeletedFiles.clear();
+        myDeletedWithoutConfirmFiles.clear();
+        myMovedFiles.clear();
+      });
+    }
+
     private void checkMovedAddedSourceBack() {
       if (myAddedFiles.isEmpty() || myMovedFiles.isEmpty()) return;
 
@@ -208,8 +219,7 @@ public abstract class VcsVFSListener implements Disposable {
     }
 
     @RequiresBackgroundThread
-    private void process(@NotNull List<VFileEvent> events) {
-      processEvents(events);
+    private void executePendingTasks() {
       withLock(PROCESSING_LOCK.writeLock(), () -> {
         doNotDeleteAddedCopiedOrMovedFiles();
         checkMovedAddedSourceBack();
@@ -264,13 +274,13 @@ public abstract class VcsVFSListener implements Disposable {
       });
     }
 
-    private void processDeletedFile(@NotNull VirtualFile file) {
+    private void processBeforeDeletedFile(@NotNull VirtualFile file) {
       if (file.isDirectory() && file instanceof NewVirtualFile && !isDirectoryVersioningSupported() && !isRecursiveDeleteSupported()) {
         for (VirtualFile child : ((NewVirtualFile)file).getCachedChildren()) {
           ProgressManager.checkCanceled();
           FileStatus status = myChangeListManager.getStatus(child);
           if (!filterOutByStatus(status)) {
-            processDeletedFile(child);
+            processBeforeDeletedFile(child);
           }
         }
       }
@@ -331,7 +341,7 @@ public abstract class VcsVFSListener implements Disposable {
       }
       else {
         LOG.debug("beforeFileMovement ", event, " into different vcs");
-        myProcessor.processDeletedFile(file);
+        myProcessor.processBeforeDeletedFile(file);
       }
     }
 
@@ -347,7 +357,25 @@ public abstract class VcsVFSListener implements Disposable {
       }
     }
 
-    private void processEvents(@NotNull List<VFileEvent> events) {
+    @RequiresEdt
+    private void processBeforeEvents(@NotNull List<VFileEvent> events) {
+      for (VFileEvent event : events) {
+        if (isEventIgnored(event)) continue;
+
+        if (event instanceof VFileDeleteEvent && allowedDeletion(event)) {
+          processBeforeDeletedFile(((VFileDeleteEvent)event).getFile());
+        }
+        else if (event instanceof VFileMoveEvent) {
+          processBeforeFileMovement((VFileMoveEvent)event);
+        }
+        else if (event instanceof VFilePropertyChangeEvent) {
+          processBeforePropertyChange((VFilePropertyChangeEvent)event);
+        }
+      }
+    }
+
+    @RequiresBackgroundThread
+    private void processAfterEvents(@NotNull List<VFileEvent> events) {
       for (VFileEvent event : events) {
         ProgressManager.checkCanceled();
         if (isEventIgnored(event)) continue;
@@ -581,6 +609,18 @@ public abstract class VcsVFSListener implements Disposable {
     return selectedFilePaths != null ? selectedFilePaths : emptyList();
   }
 
+  /**
+   * @return whether {@link #beforeContentsChange} is overridden.
+   */
+  protected boolean processBeforeContentsChange() {
+    return false;
+  }
+
+  /**
+   * This is a very expensive operation and shall be avoided whenever possible.
+   *
+   * @see #processBeforeContentsChange()
+   */
   protected void beforeContentsChange(@NotNull VFileContentChangeEvent event) {
   }
 
@@ -683,14 +723,13 @@ public abstract class VcsVFSListener implements Disposable {
 
   private class MyAsyncVfsListener implements AsyncFileListener {
 
-    private boolean isBeforeEvent(@NotNull VFileEvent event) {
-      return event instanceof VFileContentChangeEvent
-             || event instanceof VFileDeleteEvent
+    private static boolean isBeforeEvent(@NotNull VFileEvent event) {
+      return event instanceof VFileDeleteEvent
              || event instanceof VFileMoveEvent
              || event instanceof VFilePropertyChangeEvent;
     }
 
-    private boolean isAfterEvent(@NotNull VFileEvent event) {
+    private static boolean isAfterEvent(@NotNull VFileEvent event) {
       return event instanceof VFileCreateEvent
              || event instanceof VFileCopyEvent
              || event instanceof VFileMoveEvent;
@@ -699,14 +738,17 @@ public abstract class VcsVFSListener implements Disposable {
     @Nullable
     @Override
     public ChangeApplier prepareChange(@NotNull List<? extends @NotNull VFileEvent> events) {
+      List<VFileContentChangeEvent> contentChangedEvents = new ArrayList<>();
       List<VFileEvent> beforeEvents = new ArrayList<>();
       List<VFileEvent> afterEvents = new ArrayList<>();
       for (VFileEvent event : events) {
         ProgressManager.checkCanceled();
-        if (event instanceof VFileContentChangeEvent) {
-          VirtualFile file = Objects.requireNonNull(event.getFile());
-          if (isUnderMyVcs(file)) {
-            beforeEvents.add(event);
+        if (event instanceof VFileContentChangeEvent contentChangeEvent) {
+          if (processBeforeContentsChange()) {
+            VirtualFile file = contentChangeEvent.getFile();
+            if (isUnderMyVcs(file)) {
+              contentChangedEvents.add(contentChangeEvent);
+            }
           }
         }
         else if (isEventAccepted(event)) {
@@ -718,28 +760,14 @@ public abstract class VcsVFSListener implements Disposable {
           }
         }
       }
-      return beforeEvents.isEmpty() && afterEvents.isEmpty() ? null : new ChangeApplier() {
+      return contentChangedEvents.isEmpty() && beforeEvents.isEmpty() && afterEvents.isEmpty() ? null : new ChangeApplier() {
         @Override
         public void beforeVfsChange() {
-          for (VFileEvent event : beforeEvents) {
-            if (event instanceof VFileContentChangeEvent) {
-              beforeContentsChange((VFileContentChangeEvent)event);
-            }
-
-            if (isEventIgnored(event)) {
-              continue;
-            }
-
-            if (event instanceof VFileDeleteEvent && allowedDeletion(event)) {
-              myProcessor.processDeletedFile(((VFileDeleteEvent)event).getFile());
-            }
-            else if (event instanceof VFileMoveEvent) {
-              myProcessor.processBeforeFileMovement((VFileMoveEvent)event);
-            }
-            else if (event instanceof VFilePropertyChangeEvent) {
-              myProcessor.processBeforePropertyChange((VFilePropertyChangeEvent)event);
-            }
+          for (VFileContentChangeEvent event : contentChangedEvents) {
+            beforeContentsChange(event);
           }
+
+          myProcessor.processBeforeEvents(beforeEvents);
         }
 
         @Override
@@ -776,8 +804,14 @@ public abstract class VcsVFSListener implements Disposable {
       new Task.Backgroundable(myProject, VcsBundle.message("progress.title.version.control.processing.changed.files"), true) {
         @Override
         public void run(@NotNull ProgressIndicator indicator) {
-          indicator.checkCanceled();
-          myProcessor.process(events);
+          try {
+            indicator.checkCanceled();
+            myProcessor.processAfterEvents(events);
+            myProcessor.executePendingTasks();
+          }
+          catch (ProcessCanceledException e) {
+            myProcessor.clearAllPendingTasks();
+          }
         }
       }.queue();
     }

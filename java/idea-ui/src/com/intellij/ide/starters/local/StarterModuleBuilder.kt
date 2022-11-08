@@ -22,6 +22,7 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.extensions.ExtensionPointName
+import com.intellij.openapi.externalSystem.service.project.manage.ExternalProjectsManagerImpl
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -31,6 +32,7 @@ import com.intellij.openapi.module.ModuleType
 import com.intellij.openapi.module.StdModuleTypes
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.progress.runBackgroundableTask
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.rootManager
 import com.intellij.openapi.projectRoots.JavaSdk
 import com.intellij.openapi.projectRoots.JavaSdkType
@@ -83,6 +85,11 @@ abstract class StarterModuleBuilder : ModuleBuilder() {
         .replace("-", "")
         .replace(INVALID_PACKAGE_NAME_SYMBOL_PATTERN, "_")
         .lowercase()
+    }
+
+    @JvmStatic
+    fun setupProject(project: Project) {
+      ExternalProjectsManagerImpl.setupCreatedProject(project)
     }
 
     @JvmStatic
@@ -200,6 +207,12 @@ abstract class StarterModuleBuilder : ModuleBuilder() {
   override fun modifyProjectTypeStep(settingsStep: SettingsStep): ModuleWizardStep? {
     // do not add standard SDK selector at the top
     return null
+  }
+
+  override fun createProject(name: String?, path: String?): Project? {
+    val project = super.createProject(name, path)
+    project?.let { setupProject(it) }
+    return project
   }
 
   @Throws(ConfigurationException::class)

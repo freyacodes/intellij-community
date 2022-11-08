@@ -13,6 +13,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.ModificationTracker;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.tree.StubFileElementType;
+import com.intellij.util.SystemProperties;
 import com.intellij.util.ThrowableRunnable;
 import com.intellij.util.containers.CollectionFactory;
 import com.intellij.util.indexing.*;
@@ -38,6 +40,17 @@ import java.util.concurrent.locks.ReadWriteLock;
 public final class StubIndexImpl extends StubIndexEx {
   static final Logger LOG = Logger.getInstance(StubIndexImpl.class);
 
+  public enum PerFileElementTypeStubChangeTrackingSource {
+    Disabled,
+    ChangedFilesCollector
+  }
+  public static final PerFileElementTypeStubChangeTrackingSource PER_FILE_ELEMENT_TYPE_STUB_CHANGE_TRACKING_SOURCE;
+  static {
+    int sourceId = SystemProperties.getIntProperty("stub.index.per.file.element.type.stub.change.tracking.source", 1);
+    PER_FILE_ELEMENT_TYPE_STUB_CHANGE_TRACKING_SOURCE = PerFileElementTypeStubChangeTrackingSource.values()[sourceId];
+  }
+
+
   private static final class AsyncState {
     private final Map<StubIndexKey<?, ?>, UpdatableIndex<?, Void, FileContent, ?>> myIndices =
       CollectionFactory.createSmallMemoryFootprintMap();
@@ -48,6 +61,8 @@ public final class StubIndexImpl extends StubIndexEx {
   private volatile AsyncState myState;
   private volatile boolean myInitialized;
 
+  private final @NotNull PerFileElementTypeStubModificationTracker myPerFileElementTypeStubModificationTracker;
+
   public StubIndexImpl() {
     StubIndexExtension.EP_NAME.addExtensionPointListener(new ExtensionPointListener<>() {
       @Override
@@ -55,6 +70,7 @@ public final class StubIndexImpl extends StubIndexEx {
         ID.unloadId(extension.getKey());
       }
     }, null);
+    myPerFileElementTypeStubModificationTracker = new PerFileElementTypeStubModificationTracker();
   }
 
   private AsyncState getAsyncState() {
@@ -226,6 +242,7 @@ public final class StubIndexImpl extends StubIndexEx {
 
   public void dispose() {
     try {
+      myPerFileElementTypeStubModificationTracker.dispose();
       for (UpdatableIndex<?, ?, ?, ?> index : getAsyncState().myIndices.values()) {
         index.dispose();
       }
@@ -383,5 +400,28 @@ public final class StubIndexImpl extends StubIndexEx {
     protected String getInitializationFinishedMessage(AsyncState initializationResult) {
       return "Initialized stub indexes: " + initializationResult.myIndices.keySet() + ".";
     }
+  }
+
+  /**
+   * @param fileElementType {@link StubFileElementType} to track changes for.
+   * @return {@link ModificationTracker} that changes stamp on every file update (with corresponding {@link StubFileElementType})
+   * for which the stub has changed.
+   * @implNote doesn't track changes of files with binary content. Modification tracking happens before the StubIndex update, so one can use
+   * this tracker to react on stub changes without performing the index update. File is considered modified if a stub for its actual content
+   * differs from what is stored in the index. Modification detector might react false-positively when the number of changed files is big.
+   */
+  @Override
+  public @NotNull ModificationTracker getPerFileElementTypeModificationTracker(@NotNull StubFileElementType<?> fileElementType) {
+    return () -> {
+      if (PER_FILE_ELEMENT_TYPE_STUB_CHANGE_TRACKING_SOURCE == PerFileElementTypeStubChangeTrackingSource.ChangedFilesCollector) {
+        ((FileBasedIndexImpl)FileBasedIndex.getInstance()).getChangedFilesCollector().processFilesToUpdateInReadAction();
+      }
+      return myPerFileElementTypeStubModificationTracker.getModificationStamp(fileElementType);
+    };
+  }
+
+  @Override
+  public @NotNull FileUpdateProcessor getPerFileElementTypeModificationTrackerUpdateProcessor() {
+    return myPerFileElementTypeStubModificationTracker;
   }
 }

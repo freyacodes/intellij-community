@@ -2,6 +2,7 @@
 package org.jetbrains.plugins.github.pullrequest.ui.toolwindow
 
 import com.intellij.collaboration.ui.CollaborationToolsUIUtil.isDefault
+import com.intellij.collaboration.ui.util.bindDisabled
 import com.intellij.collaboration.ui.util.bindVisibility
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.ActionLink
@@ -53,6 +54,7 @@ class GHRepositoryAndAccountSelectorComponentFactory internal constructor(privat
         }
 
         bindVisibility(scope, vm.githubLoginAvailableState)
+        bindDisabled(scope, vm.busyState)
       },
 
       ActionLink(GithubBundle.message("action.Github.Accounts.AddGHAccountWithToken.text")) {
@@ -60,7 +62,10 @@ class GHRepositoryAndAccountSelectorComponentFactory internal constructor(privat
           vm.submitSelection()
         }
       }.apply {
+
         bindVisibility(scope, vm.githubLoginAvailableState)
+        autoHideOnDisable = false
+        bindDisabled(scope, vm.busyState)
       },
       JButton(GithubBundle.message("action.Github.Accounts.AddGHEAccount.text")).apply {
         isDefault = true
@@ -74,6 +79,7 @@ class GHRepositoryAndAccountSelectorComponentFactory internal constructor(privat
         }
 
         bindVisibility(scope, vm.gheLoginAvailableState)
+        bindDisabled(scope, vm.busyState)
       }
     )
   }
@@ -109,7 +115,7 @@ class GHRepositoryAndAccountSelectorComponentFactory internal constructor(privat
         vm.accountSelectionState.value = it
       } != null
     }
-    else if (vm.missingCredentialsState.value) {
+    else if (vm.missingCredentialsState.value == true) {
       return GHAccountsUtil.requestReLogin(account, project, authType = authType) != null
     }
     return false
@@ -123,7 +129,7 @@ class GHRepositoryAndAccountSelectorComponentFactory internal constructor(privat
         vm.accountSelectionState.value = it.account
       } != null
     }
-    else if (vm.missingCredentialsState.value) {
+    else if (vm.missingCredentialsState.value == true) {
       return GHAccountsUtil.requestReLogin(account, project, authType = AuthorizationType.TOKEN) != null
     }
     return false

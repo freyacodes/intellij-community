@@ -545,4 +545,14 @@ public abstract class StubIndexEx extends StubIndex {
   public void cleanCaches() {
     myCachedStubIds.clear();
   }
+
+  @ApiStatus.Internal
+  @ApiStatus.Experimental
+  public interface FileUpdateProcessor {
+    void processUpdate(@NotNull VirtualFile file);
+    default void endUpdatesBatch() {};
+  }
+  @ApiStatus.Internal
+  @ApiStatus.Experimental
+  abstract public @NotNull FileUpdateProcessor getPerFileElementTypeModificationTrackerUpdateProcessor();
 }

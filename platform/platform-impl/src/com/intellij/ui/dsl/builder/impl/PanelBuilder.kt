@@ -193,7 +193,7 @@ internal class PanelBuilder(val rows: List<RowImpl>, private val dialogPanelConf
         val gaps = cell.customGaps ?: getComponentGaps(leftGap, rightGap, cell.component, spacingConfiguration)
         builder.cell(cell.viewComponent, width = width, horizontalAlign = cell.horizontalAlign, verticalAlign = cell.verticalAlign,
                      resizableColumn = cell.resizableColumn,
-                     gaps = gaps, visualPaddings = prepareVisualPaddings(cell.viewComponent.origin),
+                     gaps = gaps, visualPaddings = prepareVisualPaddings(cell.viewComponent),
                      widthGroup = cell.widthGroup)
       }
       is PanelImpl -> {
@@ -269,7 +269,7 @@ internal class PanelBuilder(val rows: List<RowImpl>, private val dialogPanelConf
       }
       else {
         val left = if (index == 0) firstCellIndent else 0
-        GeneratedComponentData(label, Gaps(top = getDefaultVerticalGap(label, spacingConfiguration), left = left), index)
+        GeneratedComponentData(label, Gaps(top = spacingConfiguration.verticalComponentGap, left = left), index)
       }
     }
 

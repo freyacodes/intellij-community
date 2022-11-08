@@ -82,7 +82,9 @@ import java.util.function.Supplier;
 /**
  * @author Konstantin Bulenkov
  * @author Anna Kozlova
+ * @deprecated unused in ide.navBar.v2. If you do a change here, please also update v2 implementation
  */
+@Deprecated
 public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Disposable, Queryable,
                                                    InfoAndProgressPanel.ScrollableToSelected, NavBarActionHandler {
 
@@ -793,6 +795,11 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
   @Override
   @Nullable
   public Object getData(@NotNull String dataId) {
+    return getDataImpl(dataId, this, this::getSelection);
+  }
+
+  @NotNull
+  JBIterable<?> getSelection() {
     Object barObject = null;
     List<Object> popupObjects = null;
 
@@ -801,25 +808,16 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       popupObjects = mySelection.myNodePopupObjects;
     }
 
-    if (barObject == null) {
-      return getDataImpl(dataId, this, this::getSelection);
+    if (barObject != null) {
+      if (popupObjects == null) {
+        return JBIterable.of(barObject).filterMap(myModel::unwrapRaw);
+      }
+
+      if (!popupObjects.isEmpty()) {
+        return JBIterable.from(popupObjects).filterMap(myModel::unwrapRaw);
+      }
     }
 
-    if (popupObjects == null) {
-      final Object obj = barObject;
-      return getDataImpl(dataId, this, () -> JBIterable.of(obj).filterMap(myModel::unwrapRaw));
-    }
-
-    if (!popupObjects.isEmpty()) {
-      final List<Object> objects = popupObjects;
-      return getDataImpl(dataId, this, () -> JBIterable.from(objects).filterMap(myModel::unwrapRaw));
-    }
-
-    return getDataImpl(dataId, this, this::getSelection);
-  }
-
-  @NotNull
-  JBIterable<?> getSelection() {
     Object selectedObject = myModel.getRawSelectedObject();
     if (selectedObject == null) return JBIterable.empty();
     return JBIterable.of(selectedObject).filterMap(myModel::unwrapRaw);
@@ -948,6 +946,11 @@ public class NavBarPanel extends JPanel implements DataProvider, PopupOwner, Dis
       }
     }
     return null;
+  }
+
+  @Override
+  public @Nullable JComponent getPopupComponent() {
+    return isNodePopupActive() ? myNodePopup.getList() : null;
   }
 
   @Override

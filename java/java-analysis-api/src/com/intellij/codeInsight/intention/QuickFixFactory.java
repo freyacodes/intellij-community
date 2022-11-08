@@ -1,7 +1,6 @@
 // Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.intention;
 
-import com.intellij.codeInsight.daemon.QuickFixActionRegistrar;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
 import com.intellij.codeInspection.util.IntentionName;
@@ -11,6 +10,7 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
+import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PropertyMemberType;
 import org.jetbrains.annotations.Nls;
@@ -252,7 +252,7 @@ public abstract class QuickFixFactory {
   public abstract IntentionAction createRenameFileFix(@NotNull String newName);
 
   @Nullable
-  public abstract IntentionAction createRenameFix(@NotNull PsiElement element, @Nullable Object highlightInfo);
+  public abstract IntentionAction createRenameFix(@NotNull PsiElement element);
 
   @NotNull
   public abstract LocalQuickFixAndIntentionActionOnPsiElement createRenameElementFix(@NotNull PsiNamedElement element);
@@ -382,7 +382,7 @@ public abstract class QuickFixFactory {
   @NotNull
   public abstract IntentionAction createMoveBoundClassToFrontFix(@NotNull PsiClass aClass, @NotNull PsiClassType type);
 
-  public abstract void registerPullAsAbstractUpFixes(@NotNull PsiMethod method, @NotNull QuickFixActionRegistrar registrar);
+  public abstract void registerPullAsAbstractUpFixes(@NotNull PsiMethod method, @NotNull List<? super IntentionAction> registrar);
 
   @NotNull
   public abstract IntentionAction createCreateAnnotationMethodFromUsageFix(@NotNull PsiNameValuePair pair);
@@ -424,7 +424,8 @@ public abstract class QuickFixFactory {
   public abstract IntentionAction createSafeDeleteFix(@NotNull PsiElement element);
 
   @NotNull
-  public abstract List<LocalQuickFix> registerOrderEntryFixes(@NotNull QuickFixActionRegistrar registrar, @NotNull PsiReference reference);
+  public abstract List<LocalQuickFix> registerOrderEntryFixes(@NotNull PsiReference reference,
+                                                              @NotNull List<? super IntentionAction> registrar);
 
   @NotNull
   public abstract IntentionAction createAddMissingRequiredAnnotationParametersFix(@NotNull PsiAnnotation annotation,
@@ -560,8 +561,8 @@ public abstract class QuickFixFactory {
 
   public abstract @NotNull IntentionAction createDeleteSwitchLabelFix(@NotNull PsiCaseLabelElement labelElement);
 
-  @Nullable
-  public abstract IntentionAction createDeleteDefaultFix(@NotNull PsiFile file, @Nullable Object highlightInfo);
+  @NotNull
+  public abstract IntentionAction createDeleteDefaultFix(@NotNull PsiFile file, @NotNull PsiElement duplicateElement);
 
   public abstract @NotNull IntentionAction createAddAnnotationTargetFix(@NotNull PsiAnnotation annotation, PsiAnnotation.TargetType target);
 
@@ -623,4 +624,38 @@ public abstract class QuickFixFactory {
    * @return a fix that refactors code to make variable effectively final when possible. Null, if it cannot create such a fix.
    */
   public abstract @Nullable IntentionAction createMakeVariableEffectivelyFinalFix(@NotNull PsiVariable variable);
+
+  /**
+   * @param elements elements to delete
+   * @param text     the text to show in the intention popup
+   * @return a fix that deletes the elements
+   */
+  @NotNull
+  public abstract IntentionAction createDeleteFix(@NotNull PsiElement @NotNull [] elements, @NotNull @Nls String text);
+
+  /**
+   * @param deconstructionList deconstruction list to add the patterns to its end
+   * @param missingPatterns    patterns to add to the end of the deconstruction list
+   * @return a fix that add the missing patterns to the end of the deconstruction list
+   */
+  @NotNull
+  public abstract IntentionAction createAddMissingNestedPatternsFix(@NotNull PsiDeconstructionList deconstructionList,
+                                                                    @NotNull Collection<Pattern> missingPatterns);
+
+  public record Pattern(@NotNull String type, @NotNull String name) {
+    public static Pattern create(@NotNull PsiRecordComponent recordComponent, @NotNull PsiElement context) {
+      JavaCodeStyleManager manager = JavaCodeStyleManager.getInstance(context.getProject());
+      String name = manager.suggestUniqueVariableName(recordComponent.getName(), context, true);
+      PsiType type = recordComponent.getType();
+      if (type instanceof PsiClassType classType && classType.resolve() instanceof PsiTypeParameter) {
+        return new Pattern("var", name);
+      }
+      return new Pattern(type.getCanonicalText(), name);
+    }
+
+    @Override
+    public String toString() {
+      return type + " " + name;
+    }
+  }
 }

@@ -93,8 +93,8 @@ internal class PortableCompilationCacheUploader(
     val cachePath = "caches/$commitHash"
     if (forcedUpload || !uploader.isExist(cachePath, true)) {
       uploader.upload(cachePath, zipFile)
-      moveFile(zipFile, s3Folder.resolve(cachePath))
     }
+    moveFile(zipFile, s3Folder.resolve(cachePath))
   }
 
   private fun uploadMetadata() {
@@ -121,8 +121,8 @@ internal class PortableCompilationCacheUploader(
         if (forcedUpload || !uploader.isExist(sourcePath)) {
           uploader.upload(sourcePath, zipFile)
           uploadedOutputCount.incrementAndGet()
-          moveFile(zipFile, s3Folder.resolve(sourcePath))
         }
+        moveFile(zipFile, s3Folder.resolve(sourcePath))
       }
     }
   }
@@ -176,17 +176,18 @@ private class Uploader(serverUrl: String) {
       check(Files.exists(file)) {
         "The file $file does not exist"
       }
+      retryWithExponentialBackOff {
+        httpClient.newCall(Request.Builder().url(url)
+          .put(object : RequestBody() {
+            override fun contentType() = MEDIA_TYPE_BINARY
 
-      val call = httpClient.newCall(Request.Builder().url(url).put(object : RequestBody() {
-        override fun contentType() = MEDIA_TYPE_BINARY
+            override fun contentLength() = Files.size(file)
 
-        override fun contentLength() = Files.size(file)
-
-        override fun writeTo(sink: BufferedSink) {
-          file.source().use(sink::writeAll)
-        }
-      }).build())
-      retryWithExponentialBackOff { call.execute().useSuccessful {} }
+            override fun writeTo(sink: BufferedSink) {
+              file.source().use(sink::writeAll)
+            }
+          }).build()).execute().useSuccessful {}
+      }
     }
     return true
   }

@@ -6,6 +6,7 @@ import com.intellij.ide.IdeBundle
 import com.intellij.ide.RecentProjectListActionProvider
 import com.intellij.ide.RecentProjectsManager
 import com.intellij.ide.RecentProjectsManager.RecentProjectsChange
+import com.intellij.ide.RecentProjectsManagerBase
 import com.intellij.ide.dnd.DnDEvent
 import com.intellij.ide.dnd.DnDNativeTarget
 import com.intellij.ide.dnd.DnDSupport
@@ -83,7 +84,9 @@ class ProjectsTab(private val parentDisposable: Disposable) : DefaultWelcomeScre
     })
     connect.subscribe(RecentProjectsManager.RECENT_PROJECTS_CHANGE_TOPIC, object : RecentProjectsChange {
       override fun change() {
-        checkState()
+        ApplicationManager.getApplication().invokeLater {
+          checkState()
+        }
       }
     })
   }
@@ -93,7 +96,7 @@ class ProjectsTab(private val parentDisposable: Disposable) : DefaultWelcomeScre
       layout = VerticalLayout(0)
       add(notificationPanel)
 
-      val promoPanel = WelcomeScreenComponentFactory.getSinglePromotion(false)
+      val promoPanel = WelcomeScreenComponentFactory.getSinglePromotion(RecentProjectsManagerBase.getInstanceEx().getRecentPaths().isEmpty())
       if (promoPanel != null) {
         val borderPanel = JBUI.Panels.simplePanel(promoPanel).andTransparent().apply {
           border = JBUI.Borders.empty(0, PROMO_BORDER_OFFSET, PROMO_BORDER_OFFSET, PROMO_BORDER_OFFSET)

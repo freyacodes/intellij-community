@@ -65,7 +65,7 @@ public final class JBCefApp {
 
   private static final int MIN_SUPPORTED_CEF_MAJOR_VERSION = 104;
   private static final int MIN_SUPPORTED_JCEF_API_MAJOR_VERSION = 1;
-  private static final int MIN_SUPPORTED_JCEF_API_MINOR_VERSION = 8;
+  private static final int MIN_SUPPORTED_JCEF_API_MINOR_VERSION = 9;
 
   @NotNull private final CefApp myCefApp;
 
@@ -293,10 +293,10 @@ public final class JBCefApp {
    */
   public static boolean isSupported() {
     boolean testModeEnabled = RegistryManager.getInstance().is("ide.browser.jcef.testMode.enabled");
-    if (ourSupported != null && !testModeEnabled) {
-      return ourSupported.get();
-    }
     synchronized (ourSupportedLock) {
+      if (ourSupported != null && !testModeEnabled) {
+        return ourSupported.get();
+      }
       if (testModeEnabled) {
         ourSupported = null;
       }

@@ -1,6 +1,7 @@
 // Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.sdk.add.target.conda
 
+import com.intellij.execution.target.FullPathOnTarget
 import com.intellij.execution.target.TargetEnvironmentConfiguration
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.observable.properties.GraphProperty
@@ -10,7 +11,8 @@ import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.progress.ProgressSink
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.projectRoots.Sdk
-import com.intellij.execution.target.FullPathOnTarget
+import com.intellij.openapi.ui.validation.validationErrorIf
+import com.intellij.openapi.vfs.VirtualFile
 import com.jetbrains.python.PyBundle
 import com.jetbrains.python.psi.LanguageLevel
 import com.jetbrains.python.sdk.add.target.isMutableTarget
@@ -27,7 +29,7 @@ import kotlin.coroutines.CoroutineContext
  * Model for [PyAddCondaPanelView]
  * Each boundable property ends with "Prop" and either "ro" (view can read it) or "rw" (view can set it)
  *
- * First, user fills [condaPathTextBoxRwProp] then clicks [onLoadEnvsClicked]
+ * First, user fills [condaPathTextBoxRwProp] (must be validated with [condaPathValidator]) then clicks [onLoadEnvsClicked]
  * (if [showCondaPathSetOkButtonRoProp] is true).
  *
  * After path validation [showCondaActionsPanelRoProp] becomes "true", hence radio buttons should be displayed
@@ -45,7 +47,10 @@ class PyAddCondaPanelModel(val targetConfiguration: TargetEnvironmentConfigurati
    */
   val languageLevels: List<LanguageLevel> = LanguageLevel.values().toList()
 
-  val condaPathFileChooser: FileChooserDescriptor = FileChooserDescriptor(true, false, false, false, false, false)
+  val condaPathFileChooser: FileChooserDescriptor = object : FileChooserDescriptor(true, false, false, false, false, false) {
+    override fun isFileVisible(file: VirtualFile?, showHiddenFiles: Boolean): Boolean =
+      super.isFileVisible(file, showHiddenFiles) && (file?.let { it.isDirectory || condaPathIsValid(it.path) } != false)
+  }
 
   /**
    * If target is mutable we can create new env on it
@@ -61,7 +66,7 @@ class PyAddCondaPanelModel(val targetConfiguration: TargetEnvironmentConfigurati
    * "Ok" button after conda binary path should be shown
    */
   val showCondaPathSetOkButtonRoProp: ObservableProperty<Boolean> = propertyGraph.property(false).apply {
-    dependsOn(condaPathTextBoxRwProp) { condaPathTextBoxRwProp.get().trim().isNotEmpty() }
+    dependsOn(condaPathTextBoxRwProp) { condaPathIsValid(condaPathTextBoxRwProp.get()) }
   }
 
   /**
@@ -150,7 +155,17 @@ class PyAddCondaPanelModel(val targetConfiguration: TargetEnvironmentConfigurati
   }
 
 
-  private val notEmptyRegex = Regex("^[a-zA-Z0-9_]+$")
+  private val notEmptyRegex = Regex("^[a-zA-Z0-9_-]+$")
+  private val condaPathRegex = Regex(".*[/\\\\]conda(\\.\\w{1,3})?$")
+
+  /**
+   * View validator for conda path
+   */
+  val condaPathValidator = validationErrorIf<String>(PyBundle.message("python.sdk.select.conda.path.title")) {
+    !condaPathIsValid(it)
+  }
+
+  private fun condaPathIsValid(path: FullPathOnTarget): Boolean = path.matches(condaPathRegex)
 
 
   /**
@@ -173,11 +188,21 @@ class PyAddCondaPanelModel(val targetConfiguration: TargetEnvironmentConfigurati
    * @return either null (if no error) or localized error string
    */
   fun getValidationError(): @Nls String? {
-    condaEnvs.exceptionOrNull()?.let {
+
+    val envIdentities = condaEnvs.getOrElse {
       return it.message ?: PyBundle.message("python.sdk.conda.problem.running")
-    }
-    if (showCreateNewEnvPanelRoProp.get() && !newEnvNameRwProperty.get().matches(notEmptyRegex)) {
-      return PyBundle.message("python.sdk.conda.problem.env.empty.invalid")
+    }.envs.map { it.envIdentity }.filterIsInstance<PyCondaEnvIdentity.NamedEnv>().map { it.envName }
+
+
+    if (showCreateNewEnvPanelRoProp.get()) {
+      // Create new env
+      val newEnvName = newEnvNameRwProperty.get()
+      if (!newEnvName.matches(notEmptyRegex)) {
+        return PyBundle.message("python.sdk.conda.problem.env.empty.invalid")
+      }
+      else if (newEnvName in envIdentities) {
+        return PyBundle.message("python.sdk.conda.problem.env.name.used")
+      }
     }
     return null
   }

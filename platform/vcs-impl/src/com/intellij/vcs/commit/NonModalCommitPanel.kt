@@ -10,7 +10,6 @@ import com.intellij.openapi.actionSystem.impl.ActionButton
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.editor.colors.EditorColorsListener
 import com.intellij.openapi.editor.colors.EditorColorsScheme
-import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComponentContainer
 import com.intellij.openapi.ui.popup.JBPopup
@@ -22,7 +21,6 @@ import com.intellij.openapi.vcs.actions.ShowCommitOptionsAction
 import com.intellij.openapi.vcs.changes.InclusionListener
 import com.intellij.openapi.vcs.ui.CommitMessage
 import com.intellij.openapi.wm.IdeFocusManager
-import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.panels.VerticalLayout
@@ -32,9 +30,9 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.JBUI.Borders.empty
 import com.intellij.util.ui.JBUI.Borders.emptyLeft
 import com.intellij.util.ui.JBUI.scale
-import com.intellij.util.ui.UIUtil.getTreeBackground
 import com.intellij.util.ui.UIUtil.uiTraverser
 import com.intellij.util.ui.components.BorderLayoutPanel
+import java.awt.Color
 import java.awt.Point
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -58,7 +56,9 @@ abstract class NonModalCommitPanel(
   private var needUpdateCommitOptionsUi = false
 
   protected val centerPanel = JBUI.Panels.simplePanel()
-  protected val bottomPanel: JPanel = JBPanel<JBPanel<*>>(VerticalLayout(0))
+
+  @Suppress("JoinDeclarationAndAssignment", "UNNECESSARY_LATEINIT") // used in super constructor.
+  protected lateinit var bottomPanel: JPanel
 
   private val actions = ActionManager.getInstance().getAction("ChangesView.CommitToolbar") as ActionGroup
   val toolbar = ActionManager.getInstance().createActionToolbar(COMMIT_TOOLBAR_PLACE, actions, true).apply {
@@ -71,9 +71,10 @@ abstract class NonModalCommitPanel(
   }
 
   init {
+    bottomPanel = JBPanel<JBPanel<*>>(VerticalLayout(0))
+
     commitActionsPanel.apply {
       border = getButtonPanelBorder()
-      background = getButtonPanelBackground()
 
       setTargetComponent(this@NonModalCommitPanel)
     }
@@ -81,10 +82,18 @@ abstract class NonModalCommitPanel(
       .addToCenter(commitMessage)
       .addToBottom(bottomPanel)
 
-    bottomPanel.background = getButtonPanelBackground()
-
     addToCenter(centerPanel)
     withPreferredHeight(85)
+    commitMessage.editorField.setDisposedWith(this)
+    bottomPanel.background = getButtonPanelBackground()
+  }
+
+  override fun updateUI() {
+    super.updateUI()
+
+    if (this::bottomPanel.isInitialized) {
+      bottomPanel.background = getButtonPanelBackground()
+    }
   }
 
   override val commitMessageUi: CommitMessageUi get() = commitMessage
@@ -121,15 +130,16 @@ abstract class NonModalCommitPanel(
   }
 
   private fun getButtonPanelBorder(): Border {
+    @Suppress("UseDPIAwareBorders")
     return EmptyBorder(0, scale(3), (scale(6) - commitActionsPanel.getBottomInset()).coerceAtLeast(0), 0)
   }
 
-  private fun getButtonPanelBackground(): JBColor? {
-    return JBColor.lazy { (commitMessage.editorField.editor as? EditorEx)?.backgroundColor ?: getTreeBackground() }
+  private fun getButtonPanelBackground(): Color? {
+    return commitMessage.editorField.getEditor(true)?.backgroundColor
   }
 
   override fun showCommitOptions(options: CommitOptions, actionName: String, isFromToolbar: Boolean, dataContext: DataContext) {
-    val commitOptionsPanel = CommitOptionsPanel(actionNameSupplier = { actionName }, nonFocusable = false).apply {
+    val commitOptionsPanel = CommitOptionsPanel(project, actionNameSupplier = { actionName }, nonFocusable = false).apply {
       focusTraversalPolicy = LayoutFocusTraversalPolicy()
       isFocusCycleRoot = true
 

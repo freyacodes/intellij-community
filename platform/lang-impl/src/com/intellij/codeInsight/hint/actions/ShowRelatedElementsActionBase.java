@@ -9,7 +9,6 @@ import com.intellij.codeInsight.hint.ImplementationViewSessionFactory;
 import com.intellij.codeInsight.lookup.LookupManager;
 import com.intellij.codeInsight.navigation.BackgroundUpdaterTaskBase;
 import com.intellij.codeInsight.navigation.ImplementationSearcher;
-import com.intellij.featureStatistics.FeatureUsageTracker;
 import com.intellij.ide.DataManager;
 import com.intellij.ide.actions.searcheverywhere.PSIPresentationBgRendererWrapper;
 import com.intellij.openapi.actionSystem.AnActionEvent;
@@ -122,7 +121,9 @@ public abstract class ShowRelatedElementsActionBase extends DumbAwareAction impl
   private ImplementationViewSession createNewSession(ImplementationViewSessionFactory factory,
                                                      ImplementationViewSession session,
                                                      Object lookupItemObject) {
-    return factory.createSessionForLookupElement(session.getProject(), session.getEditor(), session.getFile(), lookupItemObject,
+    VirtualFile file = session.getFile();
+    VirtualFile validFile = file != null && file.isValid() ? file : null;
+    return factory.createSessionForLookupElement(session.getProject(), session.getEditor(), validFile, lookupItemObject,
                                                  isSearchDeep(), isIncludeAlwaysSelf());
   }
 
@@ -205,13 +206,7 @@ public abstract class ShowRelatedElementsActionBase extends DumbAwareAction impl
     }
   }
 
-  protected abstract void triggerFeatureUsed(@NotNull Project project);
-
-  protected static void triggerFeatureUsed(@NotNull Project project, @NotNull String key, @NotNull String keyForLookup) {
-    FeatureUsageTracker.getInstance().triggerFeatureUsed(key);
-    if (LookupManager.getInstance(project).getActiveLookup() != null) {
-      FeatureUsageTracker.getInstance().triggerFeatureUsed(keyForLookup);
-    }
+  protected void triggerFeatureUsed(@NotNull Project project){
   }
 
   @NotNull

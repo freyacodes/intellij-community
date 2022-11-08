@@ -9,6 +9,8 @@ import com.intellij.execution.target.local.LocalTargetEnvironmentRequest
 import com.intellij.testFramework.ProjectRule
 import com.jetbrains.getPythonVersion
 import com.jetbrains.python.psi.LanguageLevel
+import com.jetbrains.python.sdk.add.target.conda.loadLocalPythonCondaPath
+import com.jetbrains.python.sdk.add.target.conda.saveLocalPythonCondaPath
 import com.jetbrains.python.sdk.flavors.conda.CondaEnvSdkFlavor
 import com.jetbrains.python.sdk.flavors.conda.NewCondaEnvRequest.*
 import com.jetbrains.python.sdk.flavors.conda.PyCondaEnv
@@ -32,6 +34,13 @@ internal class PyCondaTest {
   @Rule
   @JvmField
   internal val chain = RuleChain.outerRule(ProjectRule()).around(condaRule).around(yamlRule)
+
+
+  @Test
+  fun testLocalPathSaveLoad() {
+    saveLocalPythonCondaPath(condaRule.condaPath)
+    Assert.assertEquals("Incorrectly loaded path", condaRule.condaPath, loadLocalPythonCondaPath())
+  }
 
   @Test
   fun testCondaCreateByYaml() = runTest {
@@ -59,10 +68,15 @@ internal class PyCondaTest {
     Assert.assertTrue("No environments returned", condaEnvs.isNotEmpty())
 
     var baseFound = false
-    for (condaEnv in condaEnvs) {
+
+    //Check first three, checking same for all envs may be too slow
+    condaEnvs.take(3).forEach { condaEnv ->
       val version = getPythonVersion(condaEnv)
       Assert.assertTrue(condaEnv.envIdentity.toString(), version.isNotBlank())
       println("${condaEnv.envIdentity}: $version")
+    }
+
+    for (condaEnv in condaEnvs) {
       if ((condaEnv.envIdentity as? PyCondaEnvIdentity.UnnamedEnv)?.isBase == true) {
         Assert.assertFalse("More than one base environment", baseFound)
         baseFound = true
@@ -73,7 +87,7 @@ internal class PyCondaTest {
 
   private suspend fun getPythonVersion(condaEnv: PyCondaEnv): String {
     val req = LocalTargetEnvironmentRequest()
-    val commandLine = TargetedCommandLineBuilder(req).also { condaEnv.addCondaToTargetBuilder(it) }
+    val commandLine = TargetedCommandLineBuilder(req).also { condaEnv.addCondaToTargetBuilder(sdk = null, it) }
     commandLine.addParameter("python")
     return getPythonVersion(commandLine, CondaEnvSdkFlavor.getInstance(), req) ?: error("No version for $condaEnv")
   }

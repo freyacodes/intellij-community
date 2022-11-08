@@ -3,14 +3,12 @@ package com.intellij.refactoring.rename.api
 
 import com.intellij.openapi.util.NlsContexts
 import com.intellij.refactoring.RefactoringBundle
-import org.jetbrains.annotations.ApiStatus
 
 /**
  * The result of name validation during rename refactoring.
  *
  * @see [RenameValidator]
  */
-@ApiStatus.NonExtendable
 sealed interface RenameValidationResult {
 
   companion object {
@@ -18,8 +16,7 @@ sealed interface RenameValidationResult {
      * The result when everything is OK with the name and refactoring is safe to proceed.
      */
     @JvmStatic
-    fun ok(): RenameValidationResult =
-      RenameValidationResultData(null, level = RenameValidationResultProblemLevel.OK)
+    fun ok(): RenameValidationResult = OK
 
     /**
      * The result when user is advised to not use a particular name (e.g. due to naming conventions),
@@ -28,8 +25,9 @@ sealed interface RenameValidationResult {
      * The provided [message] will be shown to the user.
      */
     @JvmStatic
-    fun warn(message: @NlsContexts.DialogMessage String): RenameValidationResult =
-      RenameValidationResultData(message, level = RenameValidationResultProblemLevel.WARNING)
+    fun warn(message: @NlsContexts.DialogMessage String): RenameValidationResult {
+      return RenameValidationResultData(message, level = RenameValidationResultProblemLevel.WARNING)
+    }
 
     /**
      * The result when provided new name is invalid and refactoring could result in a broken code.
@@ -37,8 +35,10 @@ sealed interface RenameValidationResult {
      *
      * A standard message that the identifier is invalid will be shown to the user.
      */
-    fun invalid(): RenameValidationResult =
-      RenameValidationResultData(null, level = RenameValidationResultProblemLevel.ERROR)
+    @JvmStatic
+    fun invalid(): RenameValidationResult {
+      return RenameValidationResultData(null, level = RenameValidationResultProblemLevel.ERROR)
+    }
 
     /**
      * The result when provided new name is invalid and refactoring could result in a broken code.
@@ -47,8 +47,25 @@ sealed interface RenameValidationResult {
      * The provided [message] will be shown to the user.
      */
     @JvmStatic
-    fun invalid(message: @NlsContexts.DialogMessage String): RenameValidationResult =
-      RenameValidationResultData(message, level = RenameValidationResultProblemLevel.ERROR)
+    fun invalid(message: @NlsContexts.DialogMessage String): RenameValidationResult {
+      return RenameValidationResultData(message, level = RenameValidationResultProblemLevel.ERROR)
+    }
 
+    internal object OK: RenameValidationResult
+
+    internal data class RenameValidationResultData(
+      private val message: @NlsContexts.DialogMessage String?,
+      val level: RenameValidationResultProblemLevel,
+    ) : RenameValidationResult {
+
+      fun message(newName: String): @NlsContexts.DialogMessage String =
+        message ?: RefactoringBundle.message("automatic.renaming.dialog.identifier.invalid.error", newName)
+
+    }
+
+    internal enum class RenameValidationResultProblemLevel {
+      WARNING,
+      ERROR
+    }
   }
 }

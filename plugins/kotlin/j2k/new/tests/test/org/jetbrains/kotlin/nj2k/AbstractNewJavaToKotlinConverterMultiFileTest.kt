@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.idea.j2k.post.processing.NewJ2kPostProcessor
 import org.jetbrains.kotlin.idea.test.KotlinTestUtils
 import org.jetbrains.kotlin.idea.test.KotlinWithJdkAndRuntimeLightProjectDescriptor
 import org.jetbrains.kotlin.idea.test.dumpTextWithErrors
+import org.jetbrains.kotlin.idea.test.withCustomCompilerOptions
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.j2k.AbstractJavaToKotlinConverterTest
 import org.jetbrains.kotlin.j2k.ConverterSettings
@@ -21,14 +22,31 @@ import java.io.File
 
 abstract class AbstractNewJavaToKotlinConverterMultiFileTest : AbstractJavaToKotlinConverterTest() {
     fun doTest(dirPath: String) {
+        val directory = File(dirPath)
+        val filesToConvert = directory.listFiles { _, name -> name.endsWith(".java") }!!
+        val firstFileText = filesToConvert.first().readText()
+        withCustomCompilerOptions(firstFileText, project, module) {
+            doTest(directory, filesToConvert)
+        }
+    }
+
+    private fun doTest(directory: File, filesToConvert: Array<File>) {
         val psiManager = PsiManager.getInstance(project)
-        val filesToConvert = File(dirPath).listFiles { _, name -> name.endsWith(".java") }!!
+
         val psiFilesToConvert = filesToConvert.map { javaFile ->
+            val expectedFileName = "${javaFile.nameWithoutExtension}.external"
+            val expectedFiles = directory.listFiles { _, name ->
+                name == "$expectedFileName.kt" || name == "$expectedFileName.java"
+            }!!.filterNotNull()
+            for (expectedFile in expectedFiles) {
+                addFile(expectedFile, dirName = null)
+            }
+
             val virtualFile = addFile(javaFile, "test")
             psiManager.findFile(virtualFile) as PsiJavaFile
         }
 
-        val externalFiles = File(dirPath + File.separator + "external")
+        val externalFiles = File(directory.absolutePath + File.separator + "external")
             .takeIf { it.exists() }
             ?.listFiles { _, name ->
                 name.endsWith(".java") || name.endsWith(".kt")

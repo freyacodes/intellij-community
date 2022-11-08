@@ -329,6 +329,7 @@ private fun addActivateAndWindowsCliListeners() {
   addExternalInstanceListener { rawArgs ->
     LOG.info("External instance command received")
     val (args, currentDirectory) = if (rawArgs.isEmpty()) emptyList<String>() to null else rawArgs.subList(1, rawArgs.size) to rawArgs[0]
+    @Suppress("DEPRECATION")
     ApplicationManager.getApplication().coroutineScope.async {
       handleExternalCommand(args, currentDirectory).future.await()
     }
@@ -336,9 +337,6 @@ private fun addActivateAndWindowsCliListeners() {
 
   EXTERNAL_LISTENER = BiFunction { currentDirectory, args ->
     LOG.info("External Windows command received")
-    if (args.isEmpty()) {
-      return@BiFunction 0
-    }
     runBlocking(Dispatchers.Default) {
       val result = handleExternalCommand(args.asList(), currentDirectory)
       try {
