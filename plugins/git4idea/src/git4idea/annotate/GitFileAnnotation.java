@@ -1,7 +1,6 @@
 // Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package git4idea.annotate;
 
-import com.intellij.dvcs.repo.Repository;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -9,7 +8,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vcs.*;
 import com.intellij.openapi.vcs.annotate.*;
@@ -55,7 +53,6 @@ public final class GitFileAnnotation extends FileAnnotation {
   @NotNull private final FilePath myFilePath;
   @NotNull private final GitVcs myVcs;
   @Nullable private final VcsRevisionNumber myBaseRevision;
-  @Nullable private final VirtualFile myVcsRoot;
 
   @NotNull private final List<LineInfo> myLines;
   @Nullable private List<VcsFileRevision> myRevisions;
@@ -83,12 +80,7 @@ public final class GitFileAnnotation extends FileAnnotation {
     new GitAnnotationAspect(LineAnnotationAspect.AUTHOR, VcsBundle.message("line.annotation.aspect.author"), true) {
       @Override
       protected String doGetValue(LineInfo lineInfo) {
-        VcsUser user = lineInfo.getAuthorUser();
-        if (myVcsRoot == null) return VcsUserUtil.toExactString(user);
-
-        VcsUser mappedUser = myVcs.getAuthorMappingProvider().get(myVcsRoot, user);
-        if (mappedUser != null) return VcsUserUtil.toExactString(mappedUser);
-        return "";
+        return VcsUserUtil.toExactString(lineInfo.getAuthorUser());
       }
     };
 
@@ -103,13 +95,6 @@ public final class GitFileAnnotation extends FileAnnotation {
     myVcs = GitVcs.getInstance(myProject);
     myBaseRevision = revision;
     myLines = lines;
-    VirtualFile root;
-    try {
-      root = GitUtil.getRootForFile(project, file);
-    } catch (VcsException e) {
-      root = null;
-    }
-    myVcsRoot = root;
   }
 
   @Override
